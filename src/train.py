@@ -60,6 +60,7 @@ def eval_loader(model: nn.Module, loader: DataLoader, config: dict) -> dict:
 
     return metrics
 
+
 def train(model: nn.Module, config: dict):
     train_loader, test_loader = config['train_loader'], config['test_loader']
     optimizer = config['optimizer']
