@@ -22,11 +22,12 @@ def predict_labels(
     Output
     ------
         labels: Predicted one-hot pitches for all samples.
-            Shape of [pitches, n_samples].
+            Shape of [n_samples, pitches].
     """
     output = model(x)  # [1, n_windows, n_labels]
     output = output > 0.0
     labels =  output.long().cpu().numpy()
+    return labels
     return labels.transpose(1, 0)
     notes_id = torch.arange(output.shape[-1]).to(output.device)
     labels = [
@@ -40,25 +41,35 @@ def fill_blanks(labels: np.ndarray, delta: int):
     """Add missing pitchs when a serie of the same pitch is predicted,
     with some noisy small blanks between them.
     The parameter delta is setting how much long a blank can be.
-    
+
     Input
     -----
         - labels: One-hot pitches for all samples.
-            Shape of [pictches, n_samples].
+            Shape of [n_samples, pitches].
         - delta: Number of consecutive blanks accepted to get filled.
     """
-    inverted = 1 - labels
+    labels = 1 - labels
+    # print('Reversed:\t', *labels)
 
-    curr_sum = np.zeros(inverted.shape[1], dtype=int)
-    for sample in inverted:
-        
+    curr_sum = np.zeros(labels.shape[1], dtype=int)
+    for sample_id, sample in enumerate(labels):
+        curr_sum += sample
+        curr_sum[sample == 0] = 0
 
-def remove_noise(labels: np.ndarray, delta: int):
-    """Remove pitches that doesn't last long. They are considered
-    as noise.
-    The parameter delta is setting the maximum number of samples a noise can be.
-    """
-    pass
+        labels[sample_id] = curr_sum
+
+    # print('Cumulated:\t', *labels)
+    labels = np.flip(labels, axis=0)  # Take the samples in reverse order
+    # print('Flipped:\t', *labels)
+    between_notes = np.zeros(labels.shape[1], dtype=int)  # Wether we are between pressed pitches or not
+    for sample_id, sample in enumerate(labels):
+        between_notes[sample == 0] = 1
+        between_notes[sample > delta] = 0
+        labels[sample_id] = between_notes
+
+    labels = np.flip(labels, axis=0)  # Go back to the original order
+
+    return labels
 
 
 if __name__ == '__main__':
@@ -73,4 +84,17 @@ if __name__ == '__main__':
     model = AMTMLP(2048, 200, 3, n_labels)
 
     labels = predict_labels(model, samples)
-    fill_blanks(labels, 5)
+    labels = np.array([
+        [1, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0],
+        [1, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1],
+    ]).transpose(1, 0)
+    filled = fill_blanks(labels, 2)
+
+    for original, final in zip(
+        labels.transpose(1, 0),
+        filled.transpose(1, 0),
+    ):
+        print('Original:\t', original)
+        print('Final:\t\t', final)
+        print('')
+
