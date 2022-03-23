@@ -28,13 +28,6 @@ def predict_labels(
     output = output > 0.0
     labels =  output.long().cpu().numpy()
     return labels
-    return labels.transpose(1, 0)
-    notes_id = torch.arange(output.shape[-1]).to(output.device)
-    labels = [
-        notes_id[o].cpu().numpy()
-        for o in output
-    ]
-    return labels
 
 
 def fill_blanks(labels: np.ndarray, delta: int) -> np.ndarray:
