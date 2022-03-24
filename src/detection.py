@@ -98,6 +98,42 @@ def postprocess(
     return labels
 
 
+def streamify(labels: np.ndarray) -> list:
+    """Parse the labels into a stream of played notes.
+
+    Input
+    -----
+        - labels: One-hot pitches for all samples.
+            Shape of [n_samples, n_pitches].
+
+    Output
+    ------
+        - stream: List of pressed and unpressed pitches.
+            For each pitch, a list is associated with its onset history and duration.
+            Shape of [n_pitches].
+    """
+    durations = np.zeros(labels.shape[1], dtype=int)
+    onsets = np.zeros(labels.shape[1], dtype=bool)
+    stream = [[] for _ in range(labels.shape[1])]
+
+    for sample in labels:
+        for pitch_id in range(labels.shape[1]):
+            # Add notes if the onset is changing and if durations of the current pitch is not 0
+            # Durations can be 0 at the beginning of the samples
+            if onsets[pitch_id] != sample[pitch_id] and durations[pitch_id] != 0:
+                stream[pitch_id].append((onsets[pitch_id], durations[pitch_id]))
+
+        durations += 1
+        durations[sample != onsets] = 1
+        onsets = sample.astype('bool')
+
+    # Add the pending notes
+    for pitch_id in range(labels.shape[1]):
+        stream[pitch_id].append((onsets[pitch_id], durations[pitch_id]))
+
+    return stream
+
+
 if __name__ == '__main__':
     from mlp import AMTMLP
     from data import load, number_of_labels, AMTDataset
@@ -125,3 +161,4 @@ if __name__ == '__main__':
         print('Final:\t\t', final)
         print('')
 
+    stream = streamify(filled)
