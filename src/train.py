@@ -5,10 +5,13 @@ from collections import defaultdict
 import wandb
 import numpy as np
 from tqdm import tqdm
+from midi2audio import FluidSynth
 
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
+
+from src.detection import convert_samples_to_midi, convert_labels_to_midi
 
 
 def loss_batch(
@@ -67,8 +70,10 @@ def train(model: nn.Module, config: dict):
     epochs = config['epochs']
     device = config['device']
 
+    converter = FluidSynth()
+
     model.to(device)
-    for _ in tqdm(range(epochs)):
+    for epoch_id in tqdm(range(epochs)):
         model.train()
         for samples, labels in train_loader:
             optimizer.zero_grad()
@@ -79,12 +84,26 @@ def train(model: nn.Module, config: dict):
             loss.backward()
             optimizer.step()
 
+        logs = dict()
         metrics_train = eval_loader(model, train_loader, config)
         metrics_test = eval_loader(model, test_loader, config)
-
-        logs = dict()
         for group, metrics in zip(['Train', 'Test'], [metrics_train, metrics_test]):
             for name, value in metrics.items():
                 logs[f'{group} - {name}'] = value
+
+        if epoch_id % config['convert_frequence'] == 0:
+            samples, labels_real = train_loader.dataset.get_all(0, 5 * config['sampling_rate'])  # Gather the first 10 seconds
+
+            samples = samples.to(device)
+            midi = convert_samples_to_midi(model, samples, config['sampling_rate'])
+            midi.write('midi', 'artifacts/out_pred.mid')
+            converter.midi_to_audio('artifacts/out_pred.mid', 'artifacts/out_pred.wav')
+            logs['Predicted'] = wandb.Audio('artifacts/out_pred.wav')
+
+            labels_real = labels_real.long().cpu().numpy()
+            midi = convert_labels_to_midi(labels_real, config['sampling_rate'])
+            midi.write('midi', 'artifacts/out_real.mid')
+            converter.midi_to_audio('artifacts/out_real.mid', 'artifacts/out_real.wav')
+            logs['Real'] = wandb.Audio('artifacts/out_real.wav')
 
         wandb.log(logs)

@@ -1,6 +1,8 @@
 """Use a trained model to do the AMT task.
 """
 import numpy as np
+from music21.stream import Stream, Score
+from music21.note import Note, Rest
 
 import torch
 import torch.nn as nn
@@ -134,13 +136,109 @@ def streamify(labels: np.ndarray) -> list:
     return stream
 
 
+def to_midi(stream: list, sampling_rate: int) -> Stream:
+    """Produce a midi object from a list of pressed and unpressed
+    pitches.
+
+    Input
+    -----
+        - stream: List of pressed and unpressed pitches.
+            For each pitch, a list is associated with its onset history and duration.
+            Shape of [n_pitches].
+        - sampling_rate: Number of points in 1 second of sound.
+
+    Output
+    ------
+        - midi: Stream of multiple substreams, where each substream
+            is following one different pitch history.
+    """
+    midi = Score(id='mainScore')
+
+    for pitch_id, pitch_history in enumerate(stream):
+        pitch_midi = Stream()
+        for onset, duration in pitch_history:
+            if onset:
+                note = Note(pitch_id, quarterLength=duration / sampling_rate)
+            else:
+                note = Rest(quarterLength=duration / sampling_rate)
+
+            pitch_midi.append(note)
+
+        midi.insert(0, pitch_midi)
+
+    return midi
+
+
+def convert_labels_to_midi(
+        labels: np.ndarray,
+        sampling_rate: int,
+        max_zeros: int=100,
+        max_ones: int=100,
+    ):
+    """Pipeline predicting the labels detected by the model,
+    and converting those labels into one midi object.
+
+    Input
+    -----
+        - labels: Input windows.
+            Shape of [n_samples, window_size].
+        - sampling_rate: Number of points in 1 second of sound.
+        - max_zeros: Number of consecutive 0's accepted to get filled.
+        - max_ones: Number of consecutive 1's accepted to get replaced.
+
+    Output
+    ------
+        - midi: Stream of multiple substreams, where each substream
+            is following one different pitch history.
+    """
+    labels = postprocess(labels, max_zeros, max_ones)
+    stream = streamify(labels)
+    midi = to_midi(stream, sampling_rate)
+    return midi
+
+
+def convert_samples_to_midi(
+        model: nn.Module,
+        samples: torch.FloatTensor,
+        sampling_rate: int,
+        max_zeros: int=100,
+        max_ones: int=100,
+    ) -> Stream:
+    """Pipeline predicting the labels detected by the model,
+    and converting those labels into one midi object.
+
+    Input
+    -----
+        - model: The trained model.
+        - samples: Input windows.
+            Shape of [n_samples, window_size].
+        - sampling_rate: Number of points in 1 second of sound.
+        - max_zeros: Number of consecutive 0's accepted to get filled.
+        - max_ones: Number of consecutive 1's accepted to get replaced.
+
+    Output
+    ------
+        - midi: Stream of multiple substreams, where each substream
+            is following one different pitch history.
+    """
+    labels = predict_labels(model, samples)
+    midi = convert_labels_to_midi(
+        labels,
+        sampling_rate,
+        max_zeros,
+        max_ones,
+    )
+    return midi
+
+
 if __name__ == '__main__':
     from mlp import AMTMLP
     from data import load, number_of_labels, AMTDataset
 
     data = load('../MusicNet/musicnet/musicnet/', train=False)
+    sampling_rate = 11000
     n_labels = number_of_labels(data['labels'])
-    dataset = AMTDataset(data['id'], data['wav_path'], data['labels'], 2048, 11000, 10, n_labels)
+    dataset = AMTDataset(data['id'], data['wav_path'], data['labels'], 2048, sampling_rate, 10, n_labels)
     samples, labels = dataset.get_all(0, 100)
 
     model = AMTMLP(2048, 200, 3, n_labels)
@@ -162,3 +260,5 @@ if __name__ == '__main__':
         print('')
 
     stream = streamify(filled)
+    midi = to_midi(stream, 1)
+    midi.show()

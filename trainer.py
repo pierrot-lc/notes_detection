@@ -14,27 +14,28 @@ from src.data import load, number_of_labels, AMTDataset
 
 def init_config() -> dict:
     config = {
-        'device': 'cuda' if torch.cuda.is_available() else 'cpu',
         'group': 'Test',
+        'device': 'cuda' if torch.cuda.is_available() else 'cpu',
+        'sampling_rate': 11000,
+        'convert_frequence': 10,
+
+        'epochs': 30,
         'batch_size': 10,
-        'epochs': 100,
+        'n_samples_by_item': 50,
         'lr': 1e-3,
         'pos_weight': 15,
 
-        'window_size': 2048,
-        'hidden_size': 500,
-        'sampling_rate': 11000,
-        'n_samples_by_item': 50,
-
         'model_type': 'MLP',
-        'n_layers': 5,
+        'window_size': 4098,
+        'hidden_size': 500,
+        'n_layers': 10,
     }
 
     return config
 
 
 def load_config(config: dict):
-    train_dataset = load('MusicNet/musicnet/musicnet/', train=True)
+    train_dataset = load('MusicNet/musicnet/musicnet/', train=True, max_songs=200)
     config['n_labels'] = number_of_labels(train_dataset['labels'])
     train_dataset = AMTDataset(
         train_dataset['id'],

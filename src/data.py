@@ -185,7 +185,11 @@ def number_of_labels(labels: list) -> int:
     return max_note
 
 
-def load(path: str, train: bool) -> dict:
+def load(
+        path: str,
+        train: bool,
+        max_songs: int=-1,
+    ) -> dict:
     """Read the labels' dataframes and store the path to
     the wav files.
 
@@ -220,6 +224,10 @@ def load(path: str, train: bool) -> dict:
         path_df = os.path.join(path_labels, f'{music_id}.csv')
         df = pd.read_csv(path_df)
         data['labels'].append(df)
+
+    if max_songs > 0:
+        for key in data:
+            data[key] = data[key][:max_songs]
 
     return data
 
