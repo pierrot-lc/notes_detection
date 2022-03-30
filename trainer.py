@@ -9,17 +9,17 @@ from torch.utils.data import DataLoader
 
 from src.train import train
 from src.mlp import AMTMLP
-from src.data import load, number_of_labels, AMTDataset
+from src.data import load, get_stats, AMTDataset
 
 
 def init_config() -> dict:
     config = {
         'group': 'Test',
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
-        'sampling_rate': 11000,
-        'convert_frequence': 10,
+        'sampling_rate': 11000,  # 11000
+        'convert_frequence': 20,
 
-        'epochs': 30,
+        'epochs': 100,
         'batch_size': 10,
         'n_samples_by_item': 50,
         'lr': 1e-3,
@@ -35,8 +35,8 @@ def init_config() -> dict:
 
 
 def load_config(config: dict):
-    train_dataset = load('MusicNet/musicnet/musicnet/', train=True, max_songs=200)
-    config['n_labels'] = number_of_labels(train_dataset['labels'])
+    train_dataset = load('MusicNet/musicnet/musicnet/', train=True)
+    config['stats'] = get_stats(train_dataset['labels'])
     train_dataset = AMTDataset(
         train_dataset['id'],
         train_dataset['wav_path'],
@@ -44,7 +44,8 @@ def load_config(config: dict):
         config['window_size'],
         config['sampling_rate'],
         config['n_samples_by_item'],
-        config['n_labels'],
+        config['stats']['note']['max'],
+        config['stats']['instrument']['max'],
     )
 
     config['train_loader'] = DataLoader(
@@ -63,7 +64,8 @@ def load_config(config: dict):
         config['window_size'],
         config['sampling_rate'],
         config['n_samples_by_item'],
-        config['n_labels'],
+        config['stats']['note']['max'],
+        config['stats']['instrument']['max'],
     )
 
     config['test_loader'] = DataLoader(
@@ -75,7 +77,12 @@ def load_config(config: dict):
     )
 
     if config['model_type'] == 'MLP':
-        model = AMTMLP(config['window_size'], config['hidden_size'], config['n_layers'], config['n_labels'])
+        model = AMTMLP(
+            config['window_size'],
+            config['hidden_size'],
+            config['n_layers'],
+            config['stats']['note']['max'],
+        )
 
     config['model'] = model
     config['optimizer'] = optim.Adam(

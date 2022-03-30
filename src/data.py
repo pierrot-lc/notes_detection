@@ -108,9 +108,9 @@ class AMTDataset(Dataset):
     def prepare(self, labels: list, n_pitches: int, n_instruments: int):
         """Downsample all .wav files, and store them into the class.
         """
+        """
         print('Downsampling .wav files...')
         self.factors = []
-
         futures = []
         with ThreadPoolExecutor() as executor:
             for path in tqdm(self.wav_paths):
@@ -125,6 +125,12 @@ class AMTDataset(Dataset):
             f.result()
             for f in futures
         ]
+        """
+
+        self.factors = []
+        for path in self.wav_paths:
+            original_sr, _ = wavfile.read(path)
+            self.factors.append(original_sr // self.target_sr)
 
         self.labels = [
             SongLabels(l, n_pitches, n_instruments, f)
@@ -135,7 +141,11 @@ class AMTDataset(Dataset):
         return len(self.ids)
 
     def __getitem__(self, index: int):
-        data = self.wavs[index]
+        # data = self.wavs[index]
+        original_sr, data = wavfile.read(self.wav_paths[index])
+        downsampling_factor = original_sr // self.target_sr
+        data = decimate(data, downsampling_factor)
+        data = data / np.max(np.abs(data))
 
         # Create subsamples
         start_indices = np.random.randint(low=0, high=len(data) - self.window_size, size=self.n_samples)
@@ -155,7 +165,11 @@ class AMTDataset(Dataset):
     def get_all(self, index: int, max_idx: int):
         """Return all windows of the given index.
         """
-        data = self.wavs[index]
+        # data = self.wavs[index]
+        original_sr, data = wavfile.read(self.wav_paths[index])
+        downsampling_factor = original_sr // self.target_sr
+        data = decimate(data, downsampling_factor)
+        data = data / np.max(np.abs(data))
 
         # Create subsamples
         start_indices = np.arange(len(data) - self.window_size)
@@ -251,6 +265,26 @@ def load(
             data[key] = data[key][:max_songs]
 
     return data
+
+
+def merge_instruments(labels: torch.LongTensor) -> torch.LongTensor:
+    """Merge all instruments at each timestep, by doing a logical or
+    between each of them.
+
+    Input
+    -----
+        labels: Tensor containing the one-hot activation of each instrument.
+            Shape of [n_samples, n_instruments, n_pitches].
+
+    Output
+    ------
+        notes: Tensor with the merged instruments.
+            Shape of [n_samples, n_pitches].
+    """
+    notes = labels[:, 0]
+    for instrument_id in range(labels.shape[1]):
+        notes |= labels[:, instrument_id]
+    return notes
 
 
 if __name__ == '__main__':

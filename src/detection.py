@@ -234,7 +234,7 @@ def convert_samples_to_midi(
 
 if __name__ == '__main__':
     from mlp import AMTMLP
-    from data import load, get_stats, AMTDataset
+    from data import load, get_stats, AMTDataset, merge_instruments
 
     data = load('../MusicNet/musicnet/musicnet/', train=False)
     sampling_rate = 11000
@@ -278,9 +278,7 @@ if __name__ == '__main__':
     midi_id = dataset.ids[idx]
     samples, labels = dataset.get_all(idx, 15 * sampling_rate)
 
-    notes = labels[:, 0]
-    for instrument_id in range(labels.shape[1]):
-        notes = notes | labels[:, instrument_id]
+    notes = merge_instruments(labels)
     notes = notes.long().cpu().numpy()
 
     midi = convert_labels_to_midi(notes, sampling_rate, 1, 1)

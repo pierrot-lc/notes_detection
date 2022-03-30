@@ -12,6 +12,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from src.detection import convert_samples_to_midi, convert_labels_to_midi
+from src.data import merge_instruments
 
 
 def loss_batch(
@@ -26,12 +27,16 @@ def loss_batch(
     a dictionnary.
     """
     device = config['device']
+    metrics = dict()
+
     samples = samples.to(device)
-    labels = labels.to(device).flatten()
+    labels = merge_instruments(labels)
+    labels = labels.float().to(device).flatten()
+
     loss_fn = nn.BCEWithLogitsLoss(
         pos_weight=torch.ones(len(labels)) * config['pos_weight'],
     ).to(device)
-    metrics = dict()
+
 
     pred = model(samples).flatten()  # [batch_size * n_labels, ]
     metrics['loss'] = loss_fn(pred, labels)
@@ -70,10 +75,10 @@ def train(model: nn.Module, config: dict):
     epochs = config['epochs']
     device = config['device']
 
-    converter = FluidSynth()
+    converter = FluidSynth(sample_rate=config['sampling_rate'])
 
     model.to(device)
-    for epoch_id in tqdm(range(epochs)):
+    for epoch_id in tqdm(range(1, epochs+1)):
         model.train()
         for samples, labels in train_loader:
             optimizer.zero_grad()
@@ -92,7 +97,9 @@ def train(model: nn.Module, config: dict):
                 logs[f'{group} - {name}'] = value
 
         if epoch_id % config['convert_frequence'] == 0:
-            samples, labels_real = train_loader.dataset.get_all(0, 5 * config['sampling_rate'])  # Gather the first 10 seconds
+            music_idx = torch.randint(len(train_loader.dataset), (1,) )[0]
+            samples, labels_real = train_loader.dataset.get_all(music_idx, 5 * config['sampling_rate'])  # Gather the first 10 seconds
+            labels_real = merge_instruments(labels_real)
 
             samples = samples.to(device)
             midi = convert_samples_to_midi(model, samples, config['sampling_rate'])
@@ -101,7 +108,7 @@ def train(model: nn.Module, config: dict):
             logs['Predicted'] = wandb.Audio('artifacts/out_pred.wav')
 
             labels_real = labels_real.long().cpu().numpy()
-            midi = convert_labels_to_midi(labels_real, config['sampling_rate'])
+            midi = convert_labels_to_midi(labels_real, config['sampling_rate'], 1, 1)
             midi.write('midi', 'artifacts/out_real.mid')
             converter.midi_to_audio('artifacts/out_real.mid', 'artifacts/out_real.wav')
             logs['Real'] = wandb.Audio('artifacts/out_real.wav')
