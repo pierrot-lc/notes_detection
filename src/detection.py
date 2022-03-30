@@ -157,10 +157,11 @@ def to_midi(stream: list, sampling_rate: int) -> Stream:
     for pitch_id, pitch_history in enumerate(stream):
         pitch_midi = Stream()
         for onset, duration in pitch_history:
+            duration = 2 * duration / sampling_rate
             if onset:
-                note = Note(pitch_id, quarterLength=duration / sampling_rate)
+                note = Note(pitch_id+1, quarterLength=duration)
             else:
-                note = Rest(quarterLength=duration / sampling_rate)
+                note = Rest(quarterLength=duration)
 
             pitch_midi.append(note)
 
@@ -233,15 +234,24 @@ def convert_samples_to_midi(
 
 if __name__ == '__main__':
     from mlp import AMTMLP
-    from data import load, number_of_labels, AMTDataset
+    from data import load, get_stats, AMTDataset
 
     data = load('../MusicNet/musicnet/musicnet/', train=False)
     sampling_rate = 11000
-    n_labels = number_of_labels(data['labels'])
-    dataset = AMTDataset(data['id'], data['wav_path'], data['labels'], 2048, sampling_rate, 10, n_labels)
+    stats = get_stats(data['labels'])
+    dataset = AMTDataset(
+        data['id'],
+        data['wav_path'],
+        data['labels'],
+        2048,
+        sampling_rate,
+        10,
+        stats['note']['max'],
+        stats['instrument']['max'],
+    )
     samples, labels = dataset.get_all(0, 100)
 
-    model = AMTMLP(2048, 200, 3, n_labels)
+    model = AMTMLP(2048, 200, 3, stats['note']['max'])
 
     labels = predict_labels(model, samples)
     labels = np.array([
@@ -261,4 +271,17 @@ if __name__ == '__main__':
 
     stream = streamify(filled)
     midi = to_midi(stream, 1)
-    midi.show()
+    midi.show('text')
+
+    # Get the first 10 secs
+    idx = 0
+    midi_id = dataset.ids[idx]
+    samples, labels = dataset.get_all(idx, 15 * sampling_rate)
+
+    notes = labels[:, 0]
+    for instrument_id in range(labels.shape[1]):
+        notes = notes | labels[:, instrument_id]
+    notes = notes.long().cpu().numpy()
+
+    midi = convert_labels_to_midi(notes, sampling_rate, 1, 1)
+    midi.write('midi', f'{midi_id}.mid')
