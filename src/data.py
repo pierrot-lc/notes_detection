@@ -12,38 +12,42 @@ from torch.utils.data import Dataset
 
 
 class SongLabels:
-    def __init__(self, labels: pd.DataFrame, n_labels: int, downsampling_factor: int=1):
-        self.n_labels = n_labels
-        self.events = []  # Tuples (time, pitch, is_pressed)
+    def __init__(
+            self,
+            labels: pd.DataFrame,
+            n_pitches: int,
+            n_instruments: int,
+            downsampling_factor: int=1
+        ):
+        self.n_pitches = n_pitches
+        self.n_instruments = n_instruments
+        self.downsampling_factor = downsampling_factor
+        self.events = []  # Tuples (time, pitch, instrument, is_pressed)
 
-        for start, end, note in labels[['start_time', 'end_time', 'note']].values:
-            self.events.append((start, note, True))
-            self.events.append((end, note, False))
+        for start, end, note, instrument in labels[['start_time', 'end_time', 'note', 'instrument']].values:
+            self.events.append((start, note, instrument, True))
+            self.events.append((end, note, instrument, False))
 
         self.events = list(sorted(self.events, key=lambda el: el[0]))  # Sort by time
 
-        self.curr_index = 0
-        self.curr_labels = np.zeros(n_labels, dtype=int)
-        self.downsampling_factor = downsampling_factor
-        self.n_labels = n_labels
-
     def from_middle_points(self, middle_points: np.ndarray) -> np.ndarray:
         labels = np.zeros(
-            (len(middle_points), self.n_labels),
+            (len(middle_points), self.n_instruments, self.n_pitches),
             dtype=int
         )
 
         point_id = 0
-        previous_labels = np.zeros(self.n_labels, dtype=int)
-        for curr_labels, time in self:
-            if time >= middle_points[point_id]:  # We passed the middle point
+        previous_labels = np.zeros((self.n_instruments, self.n_pitches), dtype=int)
+        iter_label = iter(self)
+        curr_labels, curr_time = next(iter_label)
+
+        while point_id < len(middle_points):
+            if curr_time >= middle_points[point_id]:
                 labels[point_id] = previous_labels
-
                 point_id += 1
-                if point_id >= len(middle_points):
-                    break
-
-            previous_labels = curr_labels
+            else:
+                previous_labels = curr_labels
+                curr_labels, curr_time = next(iter_label)
 
         return labels
 
@@ -52,15 +56,28 @@ class SongLabels:
 
     def __iter__(self):
         self.curr_index = 0
+        self.curr_labels = np.zeros((self.n_instruments, self.n_pitches), dtype=int)
+        self.first_iter = True
         return self
 
     def __next__(self):
         if self.curr_index >= len(self):
             raise StopIteration
 
-        time, note, is_pressed = self.events[self.curr_index]
-        self.curr_labels[note - 1] = int(is_pressed)
+        if self.first_iter:  # Return the labels for the first iteration
+            self.first_iter = False
+            return self.curr_labels.copy(), 0
+
+        # Do update the labels while the time event does not change
+        time, note, instrument, is_pressed = self.events[self.curr_index]
+        self.curr_labels[instrument - 1, note - 1] = int(is_pressed)
         self.curr_index += 1
+
+        while self.curr_index < len(self) and self.events[self.curr_index - 1][0] == self.events[self.curr_index][0]:
+            time, note, instrument, is_pressed = self.events[self.curr_index]
+            self.curr_labels[instrument - 1, note - 1] = int(is_pressed)
+            self.curr_index += 1
+
         return self.curr_labels.copy(), time // self.downsampling_factor
 
 
@@ -76,20 +93,19 @@ class AMTDataset(Dataset):
             window_size: int,
             sampling_rate: int,
             n_samples_by_item: int,
-            n_labels: int,
+            n_pitches: int,
+            n_instruments: int,
         ):
         self.ids = ids
         self.wav_paths = wav_paths
-        self.labels = labels
 
         self.window_size = window_size
         self.target_sr = sampling_rate
         self.n_samples = n_samples_by_item
-        self.n_labels = n_labels
 
-        self.prepare()
+        self.prepare(labels, n_pitches, n_instruments)
 
-    def prepare(self):
+    def prepare(self, labels: list, n_pitches: int, n_instruments: int):
         """Downsample all .wav files, and store them into the class.
         """
         print('Downsampling .wav files...')
@@ -111,17 +127,15 @@ class AMTDataset(Dataset):
         ]
 
         self.labels = [
-            SongLabels(l, self.n_labels, f)
-            for l, f in zip(self.labels, self.factors)
+            SongLabels(l, n_pitches, n_instruments, f)
+            for l, f in zip(labels, self.factors)
         ]
 
     def __len__(self):
         return len(self.ids)
 
     def __getitem__(self, index: int):
-        # Load data
         data = self.wavs[index]
-        downsampling_factor = self.factors[index]
 
         # Create subsamples
         start_indices = np.random.randint(low=0, high=len(data) - self.window_size, size=self.n_samples)
@@ -134,17 +148,14 @@ class AMTDataset(Dataset):
 
         # Compute corresponding labels
         labels = self.labels[index].from_middle_points(start_indices + self.window_size // 2)
-        labels = torch.FloatTensor(labels)
+        labels = torch.LongTensor(labels)
 
         return samples, labels
 
     def get_all(self, index: int, max_idx: int):
         """Return all windows of the given index.
         """
-        # Load data
         data = self.wavs[index]
-        labels = self.labels[index]
-        downsampling_factor = self.factors[index]
 
         # Create subsamples
         start_indices = np.arange(len(data) - self.window_size)
@@ -158,7 +169,7 @@ class AMTDataset(Dataset):
 
         # Compute corresponding labels
         labels = self.labels[index].from_middle_points(start_indices + self.window_size // 2)
-        labels = torch.FloatTensor(labels)
+        labels = torch.LongTensor(labels)
 
         return samples, labels
 
@@ -174,15 +185,25 @@ class AMTDataset(Dataset):
         return samples, labels
 
 
-def number_of_labels(labels: list) -> int:
-    """Compute the number of labels in the given list of labels.
-    This is essentially the maximum note encountered among all dataframes.
+def get_stats(labels: list) -> int:
+    """Compute the number of pitches and instruments in the given list of labels.
     """
-    max_note, min_note = labels[0]['note'].max(), labels[0]['note'].min()
-    for df in labels:
-        max_note = max(max_note, df['note'].max())
-        min_note = min(min_note, df['note'].min())
-    return max_note
+    stats = {
+        col: dict()
+        for col in ['note', 'instrument']
+    }
+
+    for col in stats:
+        max_c, min_c = labels[0][col].max(), labels[0][col].min()
+
+        for df in labels:
+            max_c = max(max_c, df[col].max())
+            min_c = min(min_c, df[col].min())
+
+        stats[col]['max'] = max_c
+        stats[col]['min'] = min_c
+
+    return stats
 
 
 def load(
@@ -233,11 +254,41 @@ def load(
 
 
 if __name__ == '__main__':
-    data = load('../MusicNet/musicnet/musicnet/', train=True)
-    n_labels = number_of_labels(data['labels'])
-    dataset = AMTDataset(data['id'], data['wav_path'], data['labels'], 2048, 11000, 10, n_labels)
+    sampling_rate = 11000
+    window_size = 2048
+    n_samples_by_item = 10
 
-    samples, labels = dataset[0]
-    print(samples.shape, labels.shape)
-    samples, labels = dataset.get_all(0, 10000)
-    print(samples.shape, labels.shape)
+    data = load('../MusicNet/musicnet/musicnet/', train=False)
+    stats = get_stats(data['labels'])
+    dataset = AMTDataset(
+        data['id'],
+        data['wav_path'],
+        data['labels'],
+        window_size,
+        sampling_rate,
+        n_samples_by_item,
+        stats['note']['max'],
+        stats['instrument']['max'],
+    )
+
+    music_id = 0
+    samples, labels = dataset[music_id]
+    print(f'\nn_samples_by_item = {n_samples_by_item} window_size = {window_size}')
+    print('Shape of one example:', samples.shape, labels.shape)
+
+    n_samples = 1530
+    samples, labels = dataset.get_all(music_id, n_samples)
+    print(f'Shape of the first {n_samples} samples:', samples.shape, labels.shape)
+
+    print(f'\nFor music id: {dataset.ids[music_id]}')
+    pitches_id = torch.arange(labels.shape[2])
+    for time, label in enumerate(labels):
+        if label.sum() == 0:
+            continue
+
+        print(f'T{time}')
+        for instrument_id, pitches in enumerate(label):
+            if (pitches == 1).sum() > 0:
+                print(f'{instrument_id} - {pitches_id[pitches == 1]}')
+
+        print('')
