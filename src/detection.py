@@ -19,12 +19,12 @@ def predict_labels(
     -----
         model: The trained model.
         x: Input windows.
-            Shape of [1, n_samples, window_size].
+            Shape of [n_samples, window_size].
 
     Output
     ------
         labels: Predicted one-hot pitches for all samples.
-            Shape of [n_samples, pitches].
+            Shape of [n_samples, n_pitches].
     """
     output = model(x)  # [1, n_windows, n_labels]
     output = output > 0.0
@@ -41,15 +41,15 @@ def fill_blanks(labels: np.ndarray, delta: int) -> np.ndarray:
 
     Input
     -----
-        - labels: One-hot pitches for all samples.
-            Shape of [n_samples, pitches].
-        - delta: Number of consecutive blanks accepted to get filled.
+        labels: One-hot pitches for all samples.
+            Shape of [n_samples, n_pitches].
+        delta: Number of consecutive blanks accepted to get filled.
 
     Output
     ------
-        - filled: One-hot pitches for all samples, where 0's are replaced
+        filled: One-hot pitches for all samples, where 0's are replaced
             by 1's if they are no more than `delta` consecutives.
-            Shape of [n_samples, pitches].
+            Shape of [n_samples, n_pitches].
     """
     labels = 1 - labels
 
@@ -83,15 +83,15 @@ def postprocess(
 
     Input
     -----
-        - labels: One-hot pitches for all samples.
-            Shape of [n_samples, pitches].
-        - max_zeros: Number of consecutive 0's accepted to get filled.
-        - max_ones: Number of consecutive 1's accepted to get replaced.
+        labels: One-hot pitches for all samples.
+            Shape of [n_samples, n_pitches].
+        max_zeros: Number of consecutive 0's accepted to get filled.
+        max_ones: Number of consecutive 1's accepted to get replaced.
 
     Output
     ------
-        - labels: One-hot pitches postprocessed.
-            Shape of [n_samples, pitches].
+        labels: One-hot pitches postprocessed.
+            Shape of [n_samples, n_pitches].
     """
     labels = fill_blanks(labels, max_zeros)
     labels = 1 - labels
@@ -105,12 +105,12 @@ def streamify(labels: np.ndarray) -> list:
 
     Input
     -----
-        - labels: One-hot pitches for all samples.
+        labels: One-hot pitches for all samples.
             Shape of [n_samples, n_pitches].
 
     Output
     ------
-        - stream: List of pressed and unpressed pitches.
+        stream: List of pressed and unpressed pitches.
             For each pitch, a list is associated with its onset history and duration.
             Shape of [n_pitches].
     """
@@ -142,14 +142,14 @@ def to_midi(stream: list, sampling_rate: int) -> Stream:
 
     Input
     -----
-        - stream: List of pressed and unpressed pitches.
+        stream: List of pressed and unpressed pitches.
             For each pitch, a list is associated with its onset history and duration.
             Shape of [n_pitches].
-        - sampling_rate: Number of points in 1 second of sound.
+        sampling_rate: Number of points in 1 second of sound.
 
     Output
     ------
-        - midi: Stream of multiple substreams, where each substream
+        midi: Stream of multiple substreams, where each substream
             is following one different pitch history.
     """
     midi = Score(id='mainScore')
@@ -181,15 +181,15 @@ def convert_labels_to_midi(
 
     Input
     -----
-        - labels: Input windows.
+        labels: Input windows.
             Shape of [n_samples, window_size].
-        - sampling_rate: Number of points in 1 second of sound.
-        - max_zeros: Number of consecutive 0's accepted to get filled.
-        - max_ones: Number of consecutive 1's accepted to get replaced.
+        sampling_rate: Number of points in 1 second of sound.
+        max_zeros: Number of consecutive 0's accepted to get filled.
+        max_ones: Number of consecutive 1's accepted to get replaced.
 
     Output
     ------
-        - midi: Stream of multiple substreams, where each substream
+        midi: Stream of multiple substreams, where each substream
             is following one different pitch history.
     """
     labels = postprocess(labels, max_zeros, max_ones)
@@ -210,16 +210,16 @@ def convert_samples_to_midi(
 
     Input
     -----
-        - model: The trained model.
-        - samples: Input windows.
+        model: The trained model.
+        samples: Input windows.
             Shape of [n_samples, window_size].
-        - sampling_rate: Number of points in 1 second of sound.
-        - max_zeros: Number of consecutive 0's accepted to get filled.
-        - max_ones: Number of consecutive 1's accepted to get replaced.
+        sampling_rate: Number of points in 1 second of sound.
+        max_zeros: Number of consecutive 0's accepted to get filled.
+        max_ones: Number of consecutive 1's accepted to get replaced.
 
     Output
     ------
-        - midi: Stream of multiple substreams, where each substream
+        midi: Stream of multiple substreams, where each substream
             is following one different pitch history.
     """
     labels = predict_labels(model, samples)

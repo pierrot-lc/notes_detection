@@ -8,30 +8,44 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 
 from src.train import train
-from src.mlp import AMTMLP
 from src.data import load, get_stats, AMTDataset
+from src.mlp import AMTMLP
+from src.cnn import AMTCNN
 
 
 def init_config() -> dict:
     config = {
-        'group': 'Test',
+        'group': 'Pitch prediction',
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
-        'sampling_rate': 11000,  # 11000
-        'convert_frequence': 20,
-
-        'epochs': 100,
-        'batch_size': 10,
-        'n_samples_by_item': 50,
-        'lr': 1e-3,
-        'pos_weight': 15,
-
-        'model_type': 'MLP',
         'window_size': 4098,
-        'hidden_size': 500,
-        'n_layers': 10,
+        'sampling_rate': 11000,
+        'convert_frequence': 5,
+
+        'epochs': 10,
+        'batch_size': 4,
+        'n_samples_by_item': 100,
+        'lr': 1e-4,
+        'pos_weight': 10,
+        'model_type': 'CNN',
     }
 
     return config
+
+
+def config_mlp(config: dict):
+    """Config for MLP model.
+    """
+    config['hidden_size'] = 500
+    config['n_layers'] = 10
+
+
+def config_cnn(config: dict):
+    """Config for CNN model.
+    """
+    config['n_filters'] = 20
+    config['kernel_size'] = 256
+    config['n_res_layers'] = 5
+    config['n_head_layers'] = 3
 
 
 def load_config(config: dict):
@@ -52,7 +66,7 @@ def load_config(config: dict):
         train_dataset,
         batch_size=config['batch_size'],
         shuffle=True,
-        num_workers=0,
+        num_workers=4,
         collate_fn=AMTDataset.collate_fn,
     )
 
@@ -72,17 +86,29 @@ def load_config(config: dict):
         train_dataset,
         batch_size=config['batch_size'],
         shuffle=False,
-        num_workers=0,
+        num_workers=4,
         collate_fn=AMTDataset.collate_fn,
     )
 
     if config['model_type'] == 'MLP':
+        config_mlp(config)
         model = AMTMLP(
             config['window_size'],
             config['hidden_size'],
             config['n_layers'],
             config['stats']['note']['max'],
         )
+    elif config['model_type'] == 'CNN':
+        config_cnn(config)
+        model = AMTCNN(
+            config['window_size'],
+            config['n_filters'],
+            config['kernel_size'],
+            config['n_res_layers'],
+            config['n_head_layers'],
+            config['stats']['note']['max'],
+        )
+
 
     config['model'] = model
     config['optimizer'] = optim.Adam(

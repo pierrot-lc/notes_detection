@@ -1,6 +1,7 @@
 """Training loop.
 """
 from collections import defaultdict
+from contextlib import redirect_stdout
 
 import wandb
 import numpy as np
@@ -97,6 +98,8 @@ def train(model: nn.Module, config: dict):
                 logs[f'{group} - {name}'] = value
 
         if epoch_id % config['convert_frequence'] == 0:
+            # Predict the beggining of a random sample.
+            # Logs the results into WandB.
             music_idx = torch.randint(len(train_loader.dataset), (1,) )[0]
             samples, labels_real = train_loader.dataset.get_all(music_idx, 5 * config['sampling_rate'])  # Gather the first 10 seconds
             labels_real = merge_instruments(labels_real)
@@ -104,13 +107,17 @@ def train(model: nn.Module, config: dict):
             samples = samples.to(device)
             midi = convert_samples_to_midi(model, samples, config['sampling_rate'])
             midi.write('midi', 'artifacts/out_pred.mid')
-            converter.midi_to_audio('artifacts/out_pred.mid', 'artifacts/out_pred.wav')
-            logs['Predicted'] = wandb.Audio('artifacts/out_pred.wav')
 
             labels_real = labels_real.long().cpu().numpy()
             midi = convert_labels_to_midi(labels_real, config['sampling_rate'], 1, 1)
             midi.write('midi', 'artifacts/out_real.mid')
-            converter.midi_to_audio('artifacts/out_real.mid', 'artifacts/out_real.wav')
+
+            with redirect_stdout():  # To remove the annoying prints  TODO: choose the file
+                # /!\ No errors will be printed here if there are any!!
+                converter.midi_to_audio('artifacts/out_pred.mid', 'artifacts/out_pred.wav')
+                converter.midi_to_audio('artifacts/out_real.mid', 'artifacts/out_real.wav')
+
+            logs['Predicted'] = wandb.Audio('artifacts/out_pred.wav')
             logs['Real'] = wandb.Audio('artifacts/out_real.wav')
 
         wandb.log(logs)

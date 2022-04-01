@@ -31,6 +31,19 @@ class SongLabels:
         self.events = list(sorted(self.events, key=lambda el: el[0]))  # Sort by time
 
     def from_middle_points(self, middle_points: np.ndarray) -> np.ndarray:
+        """Return the labels for each points given in that song.
+        This is done in `O(n)` time, where `n` is `len(self)`.
+
+        Input
+        -----
+            middle_points: Array of timesteps.
+                Shape of [n_points,].
+
+        Output
+        ------
+            labels: One-hot vectors for each timesteps.
+                Shape of [n_points, n_instruments, n_pitches].
+        """
         labels = np.zeros(
             (len(middle_points), self.n_instruments, self.n_pitches),
             dtype=int
@@ -41,26 +54,54 @@ class SongLabels:
         iter_label = iter(self)
         curr_labels, curr_time = next(iter_label)
 
-        while point_id < len(middle_points):
-            if curr_time >= middle_points[point_id]:
-                labels[point_id] = previous_labels
+        try:
+            # We go through all events and fill the labels until
+            # all are processed or events are terminated.
+            while point_id < len(middle_points):
+                if curr_time >= middle_points[point_id]:
+                    labels[point_id] = previous_labels
+                    point_id += 1
+                else:
+                    previous_labels = curr_labels
+                    curr_labels, curr_time = next(iter_label)
+        except StopIteration:
+            # The last middle points are after the end of the song,
+            # so we assume the end of the song is containing no labels.
+            while point_id < len(middle_points):
+                labels[point_id] = np.zeros((self.n_instruments, self.n_pitches), dtype=int)
                 point_id += 1
-            else:
-                previous_labels = curr_labels
-                curr_labels, curr_time = next(iter_label)
 
         return labels
 
     def __len__(self):
+        """Return the number of events in this song.
+        One event is a key being pressed on or off for a specific instrument.
+        This is one row of the MusicNet dataframes.
+        """
         return len(self.events)
 
     def __iter__(self):
+        """Returns itself.
+        It initializes some variables for a properly fresh iteration through all events.
+        """
         self.curr_index = 0
         self.curr_labels = np.zeros((self.n_instruments, self.n_pitches), dtype=int)
         self.first_iter = True
         return self
 
     def __next__(self):
+        """Next iteration through the events.
+        It allows the user to iterate in chronological order.
+        If some events occurs at the same time, they will be gathered into one
+        iteration.
+
+        Output
+        -----
+            label: One-hot vector for the current time step.
+                Shape of [n_instruments, n_pitches].
+            time: Time step corresponding to this label. This time step is
+                rescaled to take into account the `downsampling_factor`.
+        """
         if self.curr_index >= len(self):
             raise StopIteration
 
@@ -69,14 +110,16 @@ class SongLabels:
             return self.curr_labels.copy(), 0
 
         # Do update the labels while the time event does not change
-        time, note, instrument, is_pressed = self.events[self.curr_index]
-        self.curr_labels[instrument - 1, note - 1] = int(is_pressed)
-        self.curr_index += 1
-
-        while self.curr_index < len(self) and self.events[self.curr_index - 1][0] == self.events[self.curr_index][0]:
+        first_iter = True  # Do-while loop
+        while first_iter or (
+                self.curr_index < len(self) and\
+                self.events[self.curr_index - 1][0] == self.events[self.curr_index][0]  # Is the current event at the same time as the preceeding one?
+            ):
             time, note, instrument, is_pressed = self.events[self.curr_index]
             self.curr_labels[instrument - 1, note - 1] = int(is_pressed)
+
             self.curr_index += 1
+            first_iter = False
 
         return self.curr_labels.copy(), time // self.downsampling_factor
 
@@ -106,27 +149,8 @@ class AMTDataset(Dataset):
         self.prepare(labels, n_pitches, n_instruments)
 
     def prepare(self, labels: list, n_pitches: int, n_instruments: int):
-        """Downsample all .wav files, and store them into the class.
+        """Read the songs data and labels, instanciate all the `SongLabels` objects.
         """
-        """
-        print('Downsampling .wav files...')
-        self.factors = []
-        futures = []
-        with ThreadPoolExecutor() as executor:
-            for path in tqdm(self.wav_paths):
-                original_sr, data = wavfile.read(path)
-                data = data / np.max(np.abs(data))
-                downsampling_factor = original_sr // self.target_sr
-
-                futures.append(executor.submit(decimate, data, downsampling_factor))
-                self.factors.append(downsampling_factor)
-
-        self.wavs = [
-            f.result()
-            for f in futures
-        ]
-        """
-
         self.factors = []
         for path in self.wav_paths:
             original_sr, _ = wavfile.read(path)
@@ -141,6 +165,20 @@ class AMTDataset(Dataset):
         return len(self.ids)
 
     def __getitem__(self, index: int):
+        """Compute a random set of windows with their corresponding labels.
+
+        Input
+        -----
+            index: Index of the song to exctract the windows from.
+
+        Output
+        ------
+            samples: Windows from the song.
+                Shape of [n_samples, window_size].
+            labels: Corresponding labels from the extracted windows.
+                The labels are the ones at the middle of each window.
+                Shape of [n_samples, n_instruments, n_pitches].
+        """
         # data = self.wavs[index]
         original_sr, data = wavfile.read(self.wav_paths[index])
         downsampling_factor = original_sr // self.target_sr
