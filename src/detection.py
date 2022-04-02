@@ -11,6 +11,7 @@ import torch.nn as nn
 def predict_labels(
         model: nn.Module,
         x: torch.FloatTensor,
+        positive_threshold: float,
 
     ) -> np.ndarray:
     """Use the trained model to predict the notes played in each window.
@@ -27,7 +28,7 @@ def predict_labels(
             Shape of [n_samples, n_pitches].
     """
     output = model(x)  # [1, n_windows, n_labels]
-    output = output > 0.0
+    output = torch.sigmoid(output) >= positive_threshold
     labels =  output.long().cpu().numpy()
     return labels
 
@@ -204,6 +205,7 @@ def convert_samples_to_midi(
         sampling_rate: int,
         max_zeros: int=100,
         max_ones: int=100,
+        positive_threshold: float=0.5,
     ) -> Stream:
     """Pipeline predicting the labels detected by the model,
     and converting those labels into one midi object.
@@ -222,7 +224,7 @@ def convert_samples_to_midi(
         midi: Stream of multiple substreams, where each substream
             is following one different pitch history.
     """
-    labels = predict_labels(model, samples)
+    labels = predict_labels(model, samples, positive_threshold)
     midi = convert_labels_to_midi(
         labels,
         sampling_rate,

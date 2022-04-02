@@ -22,6 +22,7 @@ def init_config(model_type: str) -> dict:
         'window_size': 4098,
         'sampling_rate': 11000,
         'convert_frequence': 5,
+        'positive_threshold': 0.7,
 
         'epochs': 10,
         'batch_size': 4,

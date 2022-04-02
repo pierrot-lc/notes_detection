@@ -1,7 +1,7 @@
 """Training loop.
 """
 from collections import defaultdict
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr
 
 import wandb
 import numpy as np
@@ -42,7 +42,7 @@ def loss_batch(
     pred = model(samples).flatten()  # [batch_size * n_labels, ]
     metrics['loss'] = loss_fn(pred, labels)
 
-    pred = pred > 0.0
+    pred = torch.sigmoid(pred) >= config['positive_threshold']
     labels = labels.bool()
     metrics['acc'] = (pred == labels).float().mean()
     metrics['precision'] = ( pred & labels ).sum() / pred.sum()
@@ -100,19 +100,20 @@ def train(model: nn.Module, config: dict):
         if epoch_id % config['convert_frequence'] == 0:
             # Predict the beggining of a random sample.
             # Logs the results into WandB.
+            first_seconds = 10
             music_idx = torch.randint(len(train_loader.dataset), (1,) )[0]
-            samples, labels_real = train_loader.dataset.get_all(music_idx, 5 * config['sampling_rate'])  # Gather the first 10 seconds
+            samples, labels_real = train_loader.dataset.get_all(music_idx, first_seconds * config['sampling_rate'])  # Gather the first 10 seconds
             labels_real = merge_instruments(labels_real)
 
             samples = samples.to(device)
-            midi = convert_samples_to_midi(model, samples, config['sampling_rate'])
+            midi = convert_samples_to_midi(model, samples, config['sampling_rate'], config['positive_threshold'])
             midi.write('midi', 'artifacts/out_pred.mid')
 
             labels_real = labels_real.long().cpu().numpy()
             midi = convert_labels_to_midi(labels_real, config['sampling_rate'], 1, 1)
             midi.write('midi', 'artifacts/out_real.mid')
 
-            with redirect_stdout():  # To remove the annoying prints  TODO: choose the file
+            with redirect_stderr(open('log.converter', 'a')):  # To remove the annoying prints
                 # /!\ No errors will be printed here if there are any!!
                 converter.midi_to_audio('artifacts/out_pred.mid', 'artifacts/out_pred.wav')
                 converter.midi_to_audio('artifacts/out_real.mid', 'artifacts/out_real.wav')

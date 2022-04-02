@@ -8,3 +8,4 @@ src/__pycache__/
 *.pyc
 *.mid
 *.wav
+log.converter
