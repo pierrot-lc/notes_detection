@@ -19,7 +19,7 @@ def init_config(model_type: str) -> dict:
     config = {
         'group': 'Pitch prediction',
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
-        'window_size': 4096,
+        'window_size': 8192, # 4096,
         'sampling_rate': 11000,
         'convert_frequence': 5,
         'positive_threshold': 0.7,

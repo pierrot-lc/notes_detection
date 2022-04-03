@@ -211,7 +211,8 @@ class AMTDataset(Dataset):
 
         # Create subsamples
         start_indices = np.arange(len(data) - self.window_size)
-        start_indices = start_indices[:max_idx]
+        offset = np.random.randint(0, start_indices[-1] - max_idx)
+        start_indices = start_indices[offset:max_idx + offset]
 
         samples = np.array([
             data[start_index:start_index + self.window_size]

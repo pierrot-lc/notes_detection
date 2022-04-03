@@ -1,7 +1,6 @@
 """Training loop.
 """
 from collections import defaultdict
-from contextlib import redirect_stderr
 
 import wandb
 import numpy as np
@@ -100,7 +99,7 @@ def train(model: nn.Module, config: dict):
         if epoch_id % config['convert_frequence'] == 0:
             # Predict the beggining of a random sample.
             # Logs the results into WandB.
-            first_seconds = 5
+            first_seconds = 2
             music_idx = torch.randint(len(train_loader.dataset), (1,) )[0]
             samples, labels_real = train_loader.dataset.get_all(music_idx, first_seconds * config['sampling_rate'])  # Gather the first seconds
             labels_real = merge_instruments(labels_real)
@@ -115,10 +114,8 @@ def train(model: nn.Module, config: dict):
             midi = convert_labels_to_midi(labels_real, config['sampling_rate'], 1, 1)
             midi.write('midi', 'artifacts/out_real.mid')
 
-            with redirect_stderr(open('log.converter', 'a')):  # To remove the annoying prints
-                # /!\ No errors will be printed here if there are any!!
-                converter.midi_to_audio('artifacts/out_pred.mid', 'artifacts/out_pred.wav')
-                converter.midi_to_audio('artifacts/out_real.mid', 'artifacts/out_real.wav')
+            converter.midi_to_audio('artifacts/out_pred.mid', 'artifacts/out_pred.wav')
+            converter.midi_to_audio('artifacts/out_real.mid', 'artifacts/out_real.wav')
 
             logs['Predicted'] = wandb.Audio('artifacts/out_pred.wav')
             logs['Real'] = wandb.Audio('artifacts/out_real.wav')
