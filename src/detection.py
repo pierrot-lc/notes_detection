@@ -27,9 +27,10 @@ def predict_labels(
         labels: Predicted one-hot pitches for all samples.
             Shape of [n_samples, n_pitches].
     """
-    output = model(x)  # [1, n_windows, n_labels]
-    output = torch.sigmoid(output) >= positive_threshold
-    labels =  output.long().cpu().numpy()
+    with torch.no_grad():
+        output = model(x)
+        output = torch.sigmoid(output) >= positive_threshold
+        labels =  output.long().cpu().numpy()
     return labels
 
 

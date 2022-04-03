@@ -100,14 +100,16 @@ def train(model: nn.Module, config: dict):
         if epoch_id % config['convert_frequence'] == 0:
             # Predict the beggining of a random sample.
             # Logs the results into WandB.
-            first_seconds = 10
+            first_seconds = 5
             music_idx = torch.randint(len(train_loader.dataset), (1,) )[0]
-            samples, labels_real = train_loader.dataset.get_all(music_idx, first_seconds * config['sampling_rate'])  # Gather the first 10 seconds
+            samples, labels_real = train_loader.dataset.get_all(music_idx, first_seconds * config['sampling_rate'])  # Gather the first seconds
             labels_real = merge_instruments(labels_real)
 
-            samples = samples.to(device)
+            samples = samples.to('cpu')
+            model.to('cpu')
             midi = convert_samples_to_midi(model, samples, config['sampling_rate'], config['positive_threshold'])
             midi.write('midi', 'artifacts/out_pred.mid')
+            model.to(device)
 
             labels_real = labels_real.long().cpu().numpy()
             midi = convert_labels_to_midi(labels_real, config['sampling_rate'], 1, 1)

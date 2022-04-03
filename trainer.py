@@ -19,12 +19,12 @@ def init_config(model_type: str) -> dict:
     config = {
         'group': 'Pitch prediction',
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
-        'window_size': 4098,
+        'window_size': 4096,
         'sampling_rate': 11000,
         'convert_frequence': 5,
         'positive_threshold': 0.7,
 
-        'epochs': 10,
+        'epochs': 40,
         'batch_size': 4,
         'n_samples_by_item': 100,
         'lr': 1e-4,
@@ -45,10 +45,10 @@ def config_mlp(config: dict):
 def config_cnn(config: dict):
     """Config for CNN model.
     """
-    config['n_filters'] = 20
-    config['kernel_size'] = 256
-    config['n_res_layers'] = 5
-    config['n_head_layers'] = 3
+    config['n_filters'] = 4
+    config['kernel_size'] = 128
+    config['n_res_layers'] = 3
+    config['n_main_layers'] = 3
 
 
 def load_config(config: dict):
@@ -108,7 +108,7 @@ def load_config(config: dict):
             config['n_filters'],
             config['kernel_size'],
             config['n_res_layers'],
-            config['n_head_layers'],
+            config['n_main_layers'],
             config['stats']['note']['max'],
         )
 
