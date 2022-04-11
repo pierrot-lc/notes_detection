@@ -46,6 +46,7 @@ def loss_batch(
     metrics['acc'] = (pred == labels).float().mean()
     metrics['precision'] = ( pred & labels ).sum() / pred.sum()
     metrics['recall'] = ( pred & labels ).sum() / labels.sum()
+    metrics['F1'] = metrics['precision'] * metrics['recall']
 
     return metrics
 
@@ -83,6 +84,8 @@ def train(model: nn.Module, config: dict):
     model.to(device)
     for epoch_id in tqdm(range(1, epochs+1)):
         model.train()
+        logs = dict()
+
         for samples, labels in train_loader:
             optimizer.zero_grad()
 
@@ -92,12 +95,12 @@ def train(model: nn.Module, config: dict):
             loss.backward()
             optimizer.step()
 
-        logs = dict()
-        metrics_train = eval_loader(model, train_loader, config)
-        metrics_test = eval_loader(model, test_loader, config)
-        for group, metrics in zip(['Train', 'Test'], [metrics_train, metrics_test]):
             for name, value in metrics.items():
-                logs[f'{group} - {name}'] = value
+                logs['Train - ' + name] = value.item()
+
+        metrics = eval_loader(model, test_loader, config)
+        for name, value in metrics.items():
+            logs[f'Test - {name}'] = value
 
         if epoch_id % config['convert_frequence'] == 0:
             # Predict the beggining of a random sample.
