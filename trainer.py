@@ -19,12 +19,13 @@ def init_config(model_type: str) -> dict:
     config = {
         'group': 'Pitch prediction',
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
+        'piano_only': True,
         'window_size': 4096, # 8192,
         'sampling_rate': 11000,
-        'convert_frequence': 1,
-        'positive_threshold': 0.7,
+        'convert_frequence': 20,
+        'positive_threshold': 0.8,
 
-        'epochs': 3,
+        'epochs': 60,
         'batch_size': 4,
         'n_samples_by_item': 100,
         'lr': 1e-4,
@@ -35,14 +36,21 @@ def init_config(model_type: str) -> dict:
     return config
 
 
-def config_mlp(config: dict):
+def config_mlp(config: dict) -> nn.Module:
     """Config for MLP model.
     """
     config['hidden_size'] = 500
     config['n_layers'] = 10
 
+    return AMTMLP(
+        config['window_size'],
+        config['hidden_size'],
+        config['n_layers'],
+        config['stats']['note']['max'],
+    )
 
-def config_cnn(config: dict):
+
+def config_cnn(config: dict) -> nn.Module:
     """Config for CNN model.
     """
     config['n_filters'] = 4
@@ -50,9 +58,22 @@ def config_cnn(config: dict):
     config['n_res_layers'] = 3
     config['n_main_layers'] = 3
 
+    return AMTCNN(
+        config['window_size'],
+        config['n_filters'],
+        config['kernel_size'],
+        config['n_res_layers'],
+        config['n_main_layers'],
+        config['stats']['note']['max'],
+    )
+
 
 def load_config(config: dict):
-    train_dataset = load('data/musicnet/', train=True)
+    train_dataset = load(
+        'data/musicnet/',
+        train=True,
+        piano_only=config['piano_only'],
+    )
     config['stats'] = get_stats(train_dataset['labels'])
     train_dataset = AMTDataset(
         train_dataset['id'],
@@ -73,7 +94,11 @@ def load_config(config: dict):
         collate_fn=AMTDataset.collate_fn,
     )
 
-    test_dataset = load('data/musicnet/', train=False)
+    test_dataset = load(
+        'data/musicnet/',
+        train=False,
+        piano_only=config['piano_only']
+    )
     test_dataset = AMTDataset(
         test_dataset['id'],
         test_dataset['wav_path'],
@@ -86,34 +111,20 @@ def load_config(config: dict):
     )
 
     config['test_loader'] = DataLoader(
-        train_dataset,
+        test_dataset,
         batch_size=config['batch_size'],
         shuffle=False,
         num_workers=4,
         collate_fn=AMTDataset.collate_fn,
     )
 
-    if config['model_type'] == 'MLP':
-        config_mlp(config)
-        model = AMTMLP(
-            config['window_size'],
-            config['hidden_size'],
-            config['n_layers'],
-            config['stats']['note']['max'],
-        )
-    elif config['model_type'] == 'CNN':
-        config_cnn(config)
-        model = AMTCNN(
-            config['window_size'],
-            config['n_filters'],
-            config['kernel_size'],
-            config['n_res_layers'],
-            config['n_main_layers'],
-            config['stats']['note']['max'],
-        )
-
-
+    model_map = {
+        'MLP': config_mlp,
+        'CNN': config_cnn,
+    }
+    model = model_map[config['model_type']](config)
     config['model'] = model
+
     config['optimizer'] = optim.Adam(
         model.parameters(),
         lr=config['lr']
@@ -136,9 +147,8 @@ def print_infos(config: dict):
         param_exp = f'[{param}]\t'.expandtabs(tabsize)
         print(f'     {param_exp}-\t\t{value}')
 
-    print('')
 
-    print(f'{2 * tabsize * "-"} {config["model_type"]} {2 * tabsize * "-"}\n\n')
+    print(f'\n\n{2 * tabsize * "-"} {config["model_type"]} {2 * tabsize * "-"}\n')
 
     summary(
         config['model'],
@@ -148,6 +158,9 @@ def print_infos(config: dict):
         ),
         depth=2,
     )
+
+    print(f'\nTrain songs: {len(config["train_loader"].dataset):,}')
+    print(f'Test songs: {len(config["test_loader"].dataset):,}')
 
 
 if __name__ == '__main__':
