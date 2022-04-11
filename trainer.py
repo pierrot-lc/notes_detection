@@ -9,7 +9,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from torchinfo import summary
 
-from src.train import train
+from src.train import train, load_checkpoint
 from src.data import load, get_stats, AMTDataset
 from src.mlp import AMTMLP
 from src.cnn import AMTCNN
@@ -18,14 +18,17 @@ from src.cnn import AMTCNN
 def init_config(model_type: str) -> dict:
     config = {
         'group': 'Pitch prediction',
-        'device': 'cuda' if torch.cuda.is_available() else 'cpu',
         'piano_only': True,
+
+        'device': 'cuda' if torch.cuda.is_available() else 'cpu',
+        'reload_checkpoint': True,
+
         'window_size': 4096, # 8192,
         'sampling_rate': 11000,
-        'convert_frequence': 20,
-        'positive_threshold': 0.8,
+        'convert_rate': 1,
+        'positive_threshold': 0.9,
 
-        'epochs': 60,
+        'epochs': 150,
         'batch_size': 4,
         'n_samples_by_item': 100,
         'lr': 1e-4,
@@ -129,6 +132,10 @@ def load_config(config: dict):
         model.parameters(),
         lr=config['lr']
     )
+
+    config['starting_epoch'] = 1
+    if config['reload_checkpoint']:
+        config['starting_epoch'] = load_checkpoint(config['model'], config)
 
 
 def print_infos(config: dict):

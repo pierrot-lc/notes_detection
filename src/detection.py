@@ -30,7 +30,8 @@ def predict_labels(
     with torch.no_grad():
         output = model(x)
         output = torch.sigmoid(output) >= positive_threshold
-        labels =  output.long().cpu().numpy()
+        labels = output.long().cpu().numpy()
+
     return labels
 
 
