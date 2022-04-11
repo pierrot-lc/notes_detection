@@ -19,12 +19,12 @@ def init_config(model_type: str) -> dict:
     config = {
         'group': 'Pitch prediction',
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
-        'window_size': 8192, # 4096,
+        'window_size': 4096, # 8192,
         'sampling_rate': 11000,
-        'convert_frequence': 5,
+        'convert_frequence': 1,
         'positive_threshold': 0.7,
 
-        'epochs': 40,
+        'epochs': 3,
         'batch_size': 4,
         'n_samples_by_item': 100,
         'lr': 1e-4,
@@ -52,7 +52,7 @@ def config_cnn(config: dict):
 
 
 def load_config(config: dict):
-    train_dataset = load('MusicNet/musicnet/musicnet/', train=True)
+    train_dataset = load('data/musicnet/', train=True)
     config['stats'] = get_stats(train_dataset['labels'])
     train_dataset = AMTDataset(
         train_dataset['id'],
@@ -73,7 +73,7 @@ def load_config(config: dict):
         collate_fn=AMTDataset.collate_fn,
     )
 
-    test_dataset = load('MusicNet/musicnet/musicnet/', train=False)
+    test_dataset = load('data/musicnet/', train=False)
     test_dataset = AMTDataset(
         test_dataset['id'],
         test_dataset['wav_path'],
@@ -137,6 +137,8 @@ def print_infos(config: dict):
         print(f'     {param_exp}-\t\t{value}')
 
     print('')
+
+    print(f'{2 * tabsize * "-"} {config["model_type"]} {2 * tabsize * "-"}\n\n')
 
     summary(
         config['model'],

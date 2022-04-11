@@ -1,5 +1,4 @@
-MusicNet/
-MusicNet.zip
+data/
 wandb/
 artifacts/
 __pycache__/
@@ -8,4 +7,3 @@ src/__pycache__/
 *.pyc
 *.mid
 *.wav
-log.converter

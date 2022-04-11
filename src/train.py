@@ -75,7 +75,10 @@ def train(model: nn.Module, config: dict):
     epochs = config['epochs']
     device = config['device']
 
-    converter = FluidSynth(sample_rate=config['sampling_rate'])
+    converter = FluidSynth(
+        sound_font='data/midi.sf2',
+        sample_rate=config['sampling_rate']
+    )
 
     model.to(device)
     for epoch_id in tqdm(range(1, epochs+1)):
