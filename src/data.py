@@ -202,6 +202,8 @@ class AMTDataset(Dataset):
 
     def get_all(self, index: int, max_idx: int):
         """Return all windows of the given index.
+
+        The starting window is picked at random.
         """
         # data = self.wavs[index]
         original_sr, data = wavfile.read(self.wav_paths[index])
@@ -263,6 +265,7 @@ def load(
         path: str,
         train: bool,
         max_songs: int=-1,
+        piano_only: bool=False,
     ) -> dict:
     """Read the labels' dataframes and store the path to
     the wav files.
@@ -282,22 +285,26 @@ def load(
         'labels': [],
     }
 
-    if train:
-        path_wavs = os.path.join(path, 'train_data')
-        path_labels = os.path.join(path, 'train_labels')
-    else:
-        path_wavs = os.path.join(path, 'test_data')
-        path_labels = os.path.join(path, 'test_labels')
+    dir_path = 'train_' if train else 'test_'
+    path_wavs = os.path.join(path, dir_path + 'data')
+    path_labels = os.path.join(path, dir_path + 'labels')
 
     for filename in os.listdir(path_wavs):
         music_id = int(filename[:-len('.wav')])
-        data['id'].append(music_id)
-
-        data['wav_path'].append(os.path.join(path_wavs, filename))
-
         path_df = os.path.join(path_labels, f'{music_id}.csv')
+        path_wav = os.path.join(path_wavs, filename)
+
         df = pd.read_csv(path_df)
+
+        # Filter non-piano songs if needed
+        if piano_only and (df['instrument'] == 1).mean() < 0.5:
+            # This song has less than 50% of piano labels
+            # so we do not consider this song as a piano song
+            continue
+
         data['labels'].append(df)
+        data['id'].append(music_id)
+        data['wav_path'].append(path_wav)
 
     if max_songs > 0:
         for key in data:
@@ -331,8 +338,13 @@ if __name__ == '__main__':
     window_size = 2048
     n_samples_by_item = 10
 
-    data = load('../MusicNet/musicnet/musicnet/', train=False)
+    data = load(
+        '../data/musicnet/',
+        train=True,
+        piano_only=True
+    )
     stats = get_stats(data['labels'])
+
     dataset = AMTDataset(
         data['id'],
         data['wav_path'],
@@ -343,13 +355,14 @@ if __name__ == '__main__':
         stats['note']['max'],
         stats['instrument']['max'],
     )
+    print(f'{len(dataset):,} songs.')
 
     music_id = 0
     samples, labels = dataset[music_id]
     print(f'\nn_samples_by_item = {n_samples_by_item} window_size = {window_size}')
     print('Shape of one example:', samples.shape, labels.shape)
 
-    n_samples = 1530
+    n_samples = 30
     samples, labels = dataset.get_all(music_id, n_samples)
     print(f'Shape of the first {n_samples} samples:', samples.shape, labels.shape)
 
