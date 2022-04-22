@@ -23,16 +23,16 @@ def init_config(model_type: str) -> dict:
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
         'reload_checkpoint': True,
 
-        'window_size': 4096, # 8192,
+        'window_size': 16384, # 4096
         'sampling_rate': 11000,
-        'convert_rate': 1,
+        'convert_rate': 5,
         'positive_threshold': 0.9,
 
-        'epochs': 150,
-        'batch_size': 4,
-        'n_samples_by_item': 100,
+        'epochs': 10,
+        'batch_size': 2,
+        'n_samples_by_item': 50,
         'lr': 1e-4,
-        'pos_weight': 10,
+        'pos_weight': 5,
         'model_type': model_type,
     }
 
@@ -56,17 +56,17 @@ def config_mlp(config: dict) -> nn.Module:
 def config_cnn(config: dict) -> nn.Module:
     """Config for CNN model.
     """
-    config['n_filters'] = 4
-    config['kernel_size'] = 128
-    config['n_res_layers'] = 3
-    config['n_main_layers'] = 3
+    config['kernel_size'] = 1024
+    config['n_filters'] = 10
+    config['stride'] = 3
+    config['n_layers'] = 3
 
     return AMTCNN(
-        config['window_size'],
-        config['n_filters'],
         config['kernel_size'],
-        config['n_res_layers'],
-        config['n_main_layers'],
+        config['n_filters'],
+        config['stride'],
+        config['n_layers'],
+        config['window_size'],
         config['stats']['note']['max'],
     )
 
@@ -93,7 +93,7 @@ def load_config(config: dict):
         train_dataset,
         batch_size=config['batch_size'],
         shuffle=True,
-        num_workers=4,
+        num_workers=2,
         collate_fn=AMTDataset.collate_fn,
     )
 
@@ -117,7 +117,7 @@ def load_config(config: dict):
         test_dataset,
         batch_size=config['batch_size'],
         shuffle=False,
-        num_workers=4,
+        num_workers=1,
         collate_fn=AMTDataset.collate_fn,
     )
 
