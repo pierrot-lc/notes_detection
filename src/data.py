@@ -1,6 +1,7 @@
 import os
 from concurrent.futures import ThreadPoolExecutor
 
+import einops
 import numpy as np
 import pandas as pd
 from scipy.io import wavfile
@@ -73,7 +74,7 @@ class SongLabels:
 
         return labels
 
-    def __len__(self):
+    def __len__(self) -> int:
         """Return the number of events in this song.
         One event is a key being pressed on or off for a specific instrument.
         This is one row of the MusicNet dataframes.
@@ -89,7 +90,7 @@ class SongLabels:
         self.first_iter = True
         return self
 
-    def __next__(self):
+    def __next__(self) -> tuple[np.ndarray, int]:
         """Next iteration through the events.
         It allows the user to iterate in chronological order.
         If some events occurs at the same time, they will be gathered into one
@@ -127,24 +128,38 @@ class SongLabels:
 class AMTDataset(Dataset):
     """Divide all musics into samples of fixed length (window size).
     Each sample is coupled with it's activated notes in the middle.
+
+    Lists of `ids`, `wav_paths` and `labels` must have matching entries.
+
+    Parameters
+    ----------
+        ids:            List of music ids.
+        wav_paths:      List of music paths.
+        labels:         List of labels.
+        window_size:    Number of samples necessary to predict the middle labels.
+        sampling_rate:  Targeted sampling rate. Each wav will be converted to this sampling rate.
+        n_pitches:      Number of possible pitches for the labels' dimension.
+        n_instruments:  Number of possible instruments for the labels' dimension.
+        n_windows:      Number of random starting points. When sampling from this dataset,
+                        it will return one window for each starting point.
     """
     def __init__(
             self,
-            ids: list,
-            wav_paths: list,
-            labels: list,
+            ids: list[int],
+            wav_paths: list[str],
+            labels: list[pd.DataFrame],
             window_size: int,
             sampling_rate: int,
-            n_samples_by_item: int,
             n_pitches: int,
             n_instruments: int,
+            n_windows: int,
         ):
         self.ids = ids
         self.wav_paths = wav_paths
 
         self.window_size = window_size
         self.target_sr = sampling_rate
-        self.n_samples = n_samples_by_item
+        self.n_windows = n_windows
 
         self.prepare(labels, n_pitches, n_instruments)
 
@@ -162,73 +177,64 @@ class AMTDataset(Dataset):
         ]
 
     def __len__(self):
+        """Number of in the dataset.
+        """
         return len(self.ids)
 
-    def __getitem__(self, index: int):
+    def __getitem__(
+            self,
+            index: int,
+            n_windows: int = None,
+            window_size: int = None,
+        ) -> tuple[torch.FloatTensor, torch.LongTensor]:
         """Compute a random set of windows with their corresponding labels.
 
         Input
         -----
             index: Index of the song to exctract the windows from.
+            n_middle: Optionnal different `n_middle` parameter.
+            n_windows: Optionnal different `n_windows` parameter.
 
         Output
         ------
             samples: Windows from the song.
-                Shape of [n_samples, window_size].
+                Shape of [n_windows, window_size].
             labels: Corresponding labels from the extracted windows.
                 The labels are the ones at the middle of each window.
-                Shape of [n_samples, n_instruments, n_pitches].
+                Shape of [n_windows, window_size, n_instruments, n_pitches].
         """
-        # data = self.wavs[index]
+        # Choose the number of windows
+        if n_windows is None:
+            n_windows = self.n_windows
+        if window_size is None:
+            window_size = self.window_size
+
+        # Load samples
         original_sr, data = wavfile.read(self.wav_paths[index])
         downsampling_factor = original_sr // self.target_sr
         data = decimate(data, downsampling_factor)
         data = data / np.max(np.abs(data))
 
         # Create subsamples
-        start_indices = np.random.randint(low=0, high=len(data) - self.window_size, size=self.n_samples)
-        start_indices.sort()
+        start_indices = np.random.randint(low=0, high=len(data) - window_size, size=n_windows)
         samples = np.array([
-            data[index:index + self.window_size]
-            for index in start_indices
-        ])
-        samples = torch.FloatTensor(samples)
-
-        # Compute corresponding labels
-        labels = self.labels[index].from_middle_points(start_indices + self.window_size // 2)
-        labels = torch.LongTensor(labels)
-
-        return samples, labels
-
-    def get_all(self, index: int, max_idx: int):
-        """Return all windows of the given index.
-
-        The starting window is picked at random.
-        """
-        # data = self.wavs[index]
-        original_sr, data = wavfile.read(self.wav_paths[index])
-        downsampling_factor = original_sr // self.target_sr
-        data = decimate(data, downsampling_factor)
-        data = data / np.max(np.abs(data))
-
-        # Create subsamples
-        start_indices = np.arange(len(data) - self.window_size)
-        offset = np.random.randint(0, start_indices[-1] - max_idx)
-        start_indices = start_indices[offset:max_idx + offset]
-
-        samples = np.array([
-            data[start_index:start_index + self.window_size]
+            data[start_index:start_index + window_size]
             for start_index in start_indices
         ])
         samples = torch.FloatTensor(samples)
 
         # Compute corresponding labels
-        labels = self.labels[index].from_middle_points(start_indices + self.window_size // 2)
+        samples_indices = np.arange(window_size)
+        labels = [
+            self.labels[index].from_middle_points(samples_indices + start_index)
+            for start_index in start_indices
+        ]  # List of arrays of shape [window_size, n_instruments, n_pitches]
+        labels = np.array(labels)  # Shape is [n_windows, window_size, n_instruments, n_pitches]
         labels = torch.LongTensor(labels)
 
         return samples, labels
 
-    def collate_fn(batch: list) -> tuple:
+    def collate_fn(batch: list[torch.FloatTensor, torch.LongTensor]) -> tuple[torch.FloatTensor, torch.LongTensor]:
         """Collate function a dataloader must call for this dataset.
         """
         samples, labels = [], []
@@ -240,7 +246,7 @@ class AMTDataset(Dataset):
         return samples, labels
 
 
-def get_stats(labels: list) -> int:
+def get_stats(labels: list[pd.DataFrame]) -> dict:
     """Compute the number of pitches and instruments in the given list of labels.
     """
     stats = {
@@ -320,23 +326,23 @@ def merge_instruments(labels: torch.LongTensor) -> torch.LongTensor:
     Input
     -----
         labels: Tensor containing the one-hot activation of each instrument.
-            Shape of [n_samples, n_instruments, n_pitches].
+            Shape of [n_windows, n_middle, n_instruments, n_pitches].
 
     Output
     ------
         notes: Tensor with the merged instruments.
-            Shape of [n_samples, n_pitches].
+            Shape of [n_windows, n_middle, n_pitches].
     """
-    notes = labels[:, 0]
-    for instrument_id in range(labels.shape[1]):
-        notes |= labels[:, instrument_id]
-    return notes
+    notes = labels[:, :, 0]
+    for instrument_id in range(labels.shape[2]):
+        notes |= labels[:, :, instrument_id]
+    return notes.long()
 
 
 if __name__ == '__main__':
     sampling_rate = 11000
     window_size = 2048
-    n_samples_by_item = 10
+    n_windows = 10
 
     data = load(
         '../data/musicnet/',
@@ -351,21 +357,22 @@ if __name__ == '__main__':
         data['labels'],
         window_size,
         sampling_rate,
-        n_samples_by_item,
         stats['note']['max'],
         stats['instrument']['max'],
+        n_windows,
     )
     print(f'{len(dataset):,} songs.')
 
     music_id = 0
     samples, labels = dataset[music_id]
-    print(f'\nn_samples_by_item = {n_samples_by_item} window_size = {window_size}')
+    print(f'\nn_windows = {n_windows}\twindow_size = {window_size}')
     print('Shape of one example:', samples.shape, labels.shape)
 
-    n_samples = 30
-    samples, labels = dataset.get_all(music_id, n_samples)
+    n_samples = 10
+    samples, labels = dataset.__getitem__(music_id, window_size=n_samples, n_windows=1)
     print(f'Shape of the first {n_samples} samples:', samples.shape, labels.shape)
 
+    samples, labels = samples[0], labels[0]
     print(f'\nFor music id: {dataset.ids[music_id]}')
     pitches_id = torch.arange(labels.shape[2])
     for time, label in enumerate(labels):

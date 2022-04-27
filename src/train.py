@@ -60,7 +60,6 @@ def loss_batch(
         pos_weight=torch.ones(len(labels)) * config['pos_weight'],
     ).to(device)
 
-
     pred = model(samples).flatten()  # [batch_size * n_labels, ]
     metrics['loss'] = loss_fn(pred, labels)
 
@@ -130,7 +129,11 @@ def train(model: nn.Module, config: dict):
             # Logs the results into WandB.
             first_seconds = 2
             music_idx = torch.randint(len(train_loader.dataset), (1,) )[0]
-            samples, labels_real = train_loader.dataset.get_all(music_idx, first_seconds * config['sampling_rate'])  # Gather the first seconds
+            samples, labels_real = train_loader.dataset.__getitem__(
+                music_idx,
+                window_size=first_seconds * config['sampling_rate'],
+                n_windows=1,
+            )  # Gather the first seconds
             labels_real = merge_instruments(labels_real)
 
             samples = samples.to('cpu')
@@ -139,7 +142,7 @@ def train(model: nn.Module, config: dict):
             midi.write('midi', 'artifacts/out_pred.mid')
             model.to(device)
 
-            labels_real = labels_real.long().cpu().numpy()
+            labels_real = labels_real.long().cpu().numpy()[0]  # Shape is [n_middle, n_pitches]
             midi = convert_labels_to_midi(labels_real, config['sampling_rate'], 1, 1)
             midi.write('midi', 'artifacts/out_real.mid')
 

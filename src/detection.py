@@ -20,19 +20,19 @@ def predict_labels(
     -----
         model: The trained model.
         x: Input windows.
-            Shape of [n_samples, window_size].
+            Shape of [1, window_size + n_middle - 1].
 
     Output
     ------
         labels: Predicted one-hot pitches for all samples.
-            Shape of [n_samples, n_pitches].
+            Shape of [n_middle, n_pitches].
     """
     with torch.no_grad():
-        output = model(x)
+        output = model(x)  # Shape is [1, n_middle, n_pitches]
         output = torch.sigmoid(output) >= positive_threshold
         labels = output.long().cpu().numpy()
 
-    return labels
+    return labels[0]
 
 
 def fill_blanks(labels: np.ndarray, delta: int) -> np.ndarray:
