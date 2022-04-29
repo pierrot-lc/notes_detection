@@ -47,11 +47,11 @@ class SongLabels:
         """
         labels = np.zeros(
             (len(middle_points), self.n_instruments, self.n_pitches),
-            dtype=int
+            dtype=np.uint8
         )
 
         point_id = 0
-        previous_labels = np.zeros((self.n_instruments, self.n_pitches), dtype=int)
+        previous_labels = np.zeros((self.n_instruments, self.n_pitches), dtype=np.uint8)
         iter_label = iter(self)
         curr_labels, curr_time = next(iter_label)
 
@@ -86,7 +86,7 @@ class SongLabels:
         It initializes some variables for a properly fresh iteration through all events.
         """
         self.curr_index = 0
-        self.curr_labels = np.zeros((self.n_instruments, self.n_pitches), dtype=int)
+        self.curr_labels = np.zeros((self.n_instruments, self.n_pitches), dtype=np.uint8)
         self.first_iter = True
         return self
 
@@ -186,7 +186,7 @@ class AMTDataset(Dataset):
             index: int,
             n_windows: int = None,
             window_size: int = None,
-        ) -> tuple[torch.FloatTensor, torch.LongTensor]:
+        ) -> tuple[torch.FloatTensor, torch.CharTensor]:
         """Compute a random set of windows with their corresponding labels.
 
         Input
@@ -229,8 +229,8 @@ class AMTDataset(Dataset):
             self.labels[index].from_middle_points(samples_indices + start_index)
             for start_index in start_indices
         ]  # List of arrays of shape [window_size, n_instruments, n_pitches]
-        labels = np.array(labels)  # Shape is [n_windows, window_size, n_instruments, n_pitches]
-        labels = torch.LongTensor(labels)
+        labels = np.array(labels, dtype=np.uint8)  # Shape is [n_windows, window_size, n_instruments, n_pitches]
+        labels = torch.CharTensor(labels)
 
         return samples, labels
 

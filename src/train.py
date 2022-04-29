@@ -41,7 +41,7 @@ def load_checkpoint(model: nn.Module, config: dict) -> int:
 def loss_batch(
         model: nn.Module,
         samples: torch.FloatTensor,
-        labels: torch.LongTensor,
+        labels: torch.CharTensor,
         config: dict
     ) -> dict:
     """Compute the loss for one batch of samples.
@@ -127,11 +127,10 @@ def train(model: nn.Module, config: dict):
         if epoch_id % config['convert_rate'] == 0:
             # Predict the beggining of a random sample.
             # Logs the results into WandB.
-            first_seconds = 2
             music_idx = torch.randint(len(train_loader.dataset), (1,) )[0]
             samples, labels_real = train_loader.dataset.__getitem__(
                 music_idx,
-                window_size=first_seconds * config['sampling_rate'],
+                window_size=config['convert_seconds'] * config['sampling_rate'],
                 n_windows=1,
             )  # Gather the first seconds
             labels_real = merge_instruments(labels_real)

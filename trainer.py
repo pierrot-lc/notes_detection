@@ -21,14 +21,15 @@ def init_config(model_type: str) -> dict:
         'piano_only': True,
 
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
-        'reload_checkpoint': True,
+        'reload_checkpoint': False,
 
-        'window_size': 8192, #2048, #16384, # 4096
+        'window_size': 16384, #2048, #16384, # 4096
         'sampling_rate': 11000,
-        'convert_rate': 5,
+        'convert_rate': 10,
+        'convert_seconds': 5,
         'positive_threshold': 0.7,
 
-        'epochs': 30,
+        'epochs': 50,
         'batch_size': 5,
         'n_windows': 2,
         'lr': 1e-4,
@@ -56,8 +57,8 @@ def config_mlp(config: dict) -> nn.Module:
 def config_cnn(config: dict) -> nn.Module:
     """Config for CNN model.
     """
-    config['kernel_size'] = 512
-    config['stride'] = 8
+    config['kernel_size'] = 1024
+    config['stride'] = 6
     config['n_filters'] = 10
     config['n_layers'] = 3
 

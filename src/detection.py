@@ -30,7 +30,7 @@ def predict_labels(
     with torch.no_grad():
         output = model(x)  # Shape is [1, n_middle, n_pitches]
         output = torch.sigmoid(output) >= positive_threshold
-        labels = output.long().cpu().numpy()
+        labels = output.char().cpu().numpy()
 
     return labels[0]
 
@@ -240,7 +240,7 @@ if __name__ == '__main__':
     from mlp import AMTMLP
     from data import load, get_stats, AMTDataset, merge_instruments
 
-    data = load('../MusicNet/musicnet/musicnet/', train=False)
+    data = load('../data/musicnet/', train=False)
     sampling_rate = 11000
     stats = get_stats(data['labels'])
     dataset = AMTDataset(
@@ -249,15 +249,16 @@ if __name__ == '__main__':
         data['labels'],
         2048,
         sampling_rate,
-        10,
         stats['note']['max'],
         stats['instrument']['max'],
+        10,
     )
-    samples, labels = dataset.get_all(0, 100)
+    samples, labels = dataset.__getitem__(0, n_windows=1, window_size=100)
+    # samples, labels = samples[0], labels[0]
 
     model = AMTMLP(2048, 200, 3, stats['note']['max'])
 
-    labels = predict_labels(model, samples)
+    labels = predict_labels(model, samples, 0.7)
     labels = np.array([
         [1, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0],
         [1, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1],
@@ -280,10 +281,11 @@ if __name__ == '__main__':
     # Get the first 10 secs
     idx = 0
     midi_id = dataset.ids[idx]
-    samples, labels = dataset.get_all(idx, 15 * sampling_rate)
+    samples, labels = dataset.__getitem__(idx, n_windows=1, window_size=15 * sampling_rate)
+    samples, labels = samples[0], labels[0]
 
     notes = merge_instruments(labels)
-    notes = notes.long().cpu().numpy()
+    notes = notes.char().cpu().numpy()
 
     midi = convert_labels_to_midi(notes, sampling_rate, 1, 1)
     midi.write('midi', f'{midi_id}.mid')
