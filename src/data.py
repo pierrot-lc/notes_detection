@@ -234,7 +234,7 @@ class AMTDataset(Dataset):
 
         return samples, labels
 
-    def collate_fn(batch: list[torch.FloatTensor, torch.LongTensor]) -> tuple[torch.FloatTensor, torch.LongTensor]:
+    def collate_fn(batch: list[torch.FloatTensor, torch.CharTensor]) -> tuple[torch.FloatTensor, torch.CharTensor]:
         """Collate function a dataloader must call for this dataset.
         """
         samples, labels = [], []
@@ -319,7 +319,7 @@ def load(
     return data
 
 
-def merge_instruments(labels: torch.LongTensor) -> torch.LongTensor:
+def merge_instruments(labels: torch.CharTensor) -> torch.CharTensor:
     """Merge all instruments at each timestep, by doing a logical or
     between each of them.
 
@@ -336,7 +336,7 @@ def merge_instruments(labels: torch.LongTensor) -> torch.LongTensor:
     notes = labels[:, :, 0]
     for instrument_id in range(labels.shape[2]):
         notes |= labels[:, :, instrument_id]
-    return notes.long()
+    return notes.char()
 
 
 if __name__ == '__main__':
