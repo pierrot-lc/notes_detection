@@ -6,6 +6,7 @@ import wandb
 import numpy as np
 from tqdm import tqdm
 from midi2audio import FluidSynth
+from scipy.stats import norm
 
 import torch
 import torch.nn as nn
@@ -56,12 +57,25 @@ def loss_batch(
     labels = merge_instruments(labels)
     labels = labels.float().to(device).flatten()
 
+    # Penalize more the central predictions of each windows
+    # Notes on the edges are harder to predict
+    weight = np.linspace(-2, 2, samples.shape[1])
+    weight = norm.pdf(weight, 0, 1)
+    weight = torch.FloatTensor(weight).to(device)  # [sample_size, ]
+    weight = torch.repeat_interleave(
+        weight,
+        config['stats']['note']['max'],
+    )  # [sample_size * n_pitch, ]
+    weight = weight.repeat(len(samples))  # [batch_size * samples_size * n_pitch, ]
+
     loss_fn = nn.BCEWithLogitsLoss(
         pos_weight=torch.ones(len(labels)) * config['pos_weight'],
+        reduction='none',
     ).to(device)
 
-    pred = model(samples).flatten()  # [batch_size * n_labels, ]
-    metrics['loss'] = loss_fn(pred, labels)
+    pred = model(samples).flatten()  # [batch_size * sample_size * n_pitch, ]
+    loss = loss_fn(pred, labels)
+    metrics['loss'] = (loss * weight).mean()
 
     pred = torch.sigmoid(pred) >= config['positive_threshold']
     labels = labels.bool()
@@ -137,12 +151,22 @@ def train(model: nn.Module, config: dict):
 
             samples = samples.to('cpu')
             model.to('cpu')
-            midi = convert_samples_to_midi(model, samples, config['sampling_rate'], config['positive_threshold'])
+            midi = convert_samples_to_midi(
+                model,
+                samples,
+                config['sampling_rate'],
+                positive_threshold = config['positive_threshold']
+            )
             midi.write('midi', 'artifacts/out_pred.mid')
             model.to(device)
 
-            labels_real = labels_real.long().cpu().numpy()[0]  # Shape is [n_middle, n_pitches]
-            midi = convert_labels_to_midi(labels_real, config['sampling_rate'], 1, 1)
+            labels_real = labels_real.char().cpu().numpy()[0]  # Shape is [n_middle, n_pitches]
+            midi = convert_labels_to_midi(
+                labels_real,
+                config['sampling_rate'],
+                1,
+                1
+            )
             midi.write('midi', 'artifacts/out_real.mid')
 
             converter.midi_to_audio('artifacts/out_pred.mid', 'artifacts/out_pred.wav')

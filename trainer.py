@@ -13,27 +13,30 @@ from src.train import train, load_checkpoint
 from src.data import load, get_stats, AMTDataset
 from src.mlp import AMTMLP
 from src.cnn import AMTCNN
+from src.resnet import AMTResNet
 
 
 def init_config(model_type: str) -> dict:
     config = {
-        'group': 'Pitch prediction',
+        # 'group': 'MLP - Pitch Prediction',
+        # 'group': 'Unet - Pitch Prediction',
+        'group': 'ResNet - Pitch Prediction',
         'piano_only': True,
 
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
         'reload_checkpoint': False,
 
-        'window_size': 16384, #2048, #16384, # 4096
+        'window_size': 8192, # 8192, #2048, #16384, # 4096
         'sampling_rate': 11000,
-        'convert_rate': 10,
-        'convert_seconds': 5,
-        'positive_threshold': 0.7,
+        'convert_rate': 5,
+        'convert_seconds': 2,
+        'positive_threshold': 0.9,
 
         'epochs': 50,
         'batch_size': 5,
         'n_windows': 2,
-        'lr': 1e-4,
-        'pos_weight': 5,
+        'lr': 1e-3,
+        'pos_weight': 10,
         'model_type': model_type,
     }
 
@@ -58,8 +61,8 @@ def config_cnn(config: dict) -> nn.Module:
     """Config for CNN model.
     """
     config['kernel_size'] = 1024
-    config['stride'] = 6
-    config['n_filters'] = 10
+    config['stride'] = 3
+    config['n_filters'] = 50
     config['n_layers'] = 3
 
     return AMTCNN(
@@ -70,6 +73,20 @@ def config_cnn(config: dict) -> nn.Module:
         config['stats']['note']['max'],
     )
 
+
+def config_resnet(config: dict) -> nn.Module:
+    """Config for ResNet model.
+    """
+    config['kernel_size'] = 511
+    config['n_filters'] = 40
+    config['n_layers'] = 5
+
+    return AMTResNet(
+        config['kernel_size'],
+        config['n_filters'],
+        config['n_layers'],
+        config['stats']['note']['max'],
+    )
 
 def load_config(config: dict):
     train_dataset = load(
@@ -93,7 +110,7 @@ def load_config(config: dict):
         train_dataset,
         batch_size=config['batch_size'],
         shuffle=True,
-        num_workers=1,
+        num_workers=4,
         collate_fn=AMTDataset.collate_fn,
     )
 
@@ -124,6 +141,7 @@ def load_config(config: dict):
     model_map = {
         'MLP': config_mlp,
         'CNN': config_cnn,
+        'resnet': config_resnet,
     }
     model = model_map[config['model_type']](config)
     config['model'] = model
@@ -171,7 +189,7 @@ def print_infos(config: dict):
 
 
 if __name__ == '__main__':
-    available_types = ['MLP', 'CNN']
+    available_types = ['MLP', 'CNN', 'resnet']
     if len(sys.argv) != 2:
         print(f'Usage: {sys.argv[0]} [model_type]')
         print('Available model types:', *available_types)
