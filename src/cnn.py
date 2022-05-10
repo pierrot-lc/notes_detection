@@ -28,22 +28,24 @@ class AMTCNN(nn.Module):
         )
 
         hparams = {
-            'kernel_size': [kernel_size >> layer_id for layer_id in range(n_layers)],
-            'stride': [stride >> layer_id for layer_id in range(n_layers)],
+            'kernel_size': [kernel_size >> (layer_id // 3) for layer_id in range(n_layers)],
+            'stride': [max(stride >> layer_id, 1) for layer_id in range(n_layers)],
+            'n_filters': [n_filters * (layer_id // 6 + 1) for layer_id in range(n_layers+1)],
         }
+        print(hparams)
         self.hparams = hparams
 
         # Main convolutional layers
         self.convs = nn.ModuleList([
             nn.Sequential(
                 nn.Conv1d(
-                    n_filters << layer_id,
-                    n_filters << (layer_id + 1),
+                    hparams['n_filters'][layer_id],
+                    hparams['n_filters'][layer_id + 1],
                     kernel_size = hparams['kernel_size'][layer_id],
                     stride = hparams['stride'][layer_id],
                     bias = False
                 ),
-                nn.BatchNorm1d(n_filters << (layer_id + 1)),
+                nn.BatchNorm1d(hparams['n_filters'][layer_id + 1]),
                 nn.LeakyReLU(),
             )
             for layer_id in range(n_layers)
@@ -52,13 +54,13 @@ class AMTCNN(nn.Module):
         self.deconvs = nn.ModuleList([
             nn.Sequential(
                 nn.ConvTranspose1d(
-                    n_filters << (layer_id + 1),
-                    n_filters << layer_id,
+                    hparams['n_filters'][layer_id + 1],
+                    hparams['n_filters'][layer_id],
                     kernel_size = hparams['kernel_size'][layer_id],
                     stride = hparams['stride'][layer_id],
                     bias = False,
                 ),
-                nn.BatchNorm1d(n_filters << layer_id),
+                nn.BatchNorm1d(hparams['n_filters'][layer_id]),
                 nn.LeakyReLU(),
             )
             for layer_id in reversed(range(n_layers))
@@ -90,17 +92,17 @@ class AMTCNN(nn.Module):
         paddings = []
         for layer_id, conv_layer in enumerate(self.convs):
             x, pad = self.pad_input(x, layer_id)
-            activations.insert(0, x)
             paddings.insert(0, pad)
+            activations.insert(0, x)
 
             x = conv_layer(x)
 
         # Decoder forward
         for deconv_layer, act, pad in zip(self.deconvs, activations, paddings):
-            x = deconv_layer(x) + act
+            x = deconv_layer(x)
             x = self.unpad_input(x, pad)
+            # x = x + act
 
-        del activations
         return self.head(x)
 
 
