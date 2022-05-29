@@ -148,6 +148,16 @@ class AMTCNN(nn.Module):
         return x[:, :, padd_b : x.shape[-1]-padd_e]
 
 
+def from_config(config: dict) -> AMTCNN:
+    return AMTCNN(
+        config['model_params']['kernel_size'],
+        config['model_params']['stride'],
+        config['model_params']['n_filters'],
+        config['model_params']['n_layers'],
+        config['dataset']['stats']['note']['max']
+    )
+
+
 if __name__ == '__main__':
     from torchinfo import summary
     n_filters = 10

@@ -21,7 +21,7 @@ def save_checkpoint(model: nn.Module, epoch_id: int, config: dict):
     """
     torch.save({
         'model': model.state_dict(),
-        'optimizer': config['optimizer'].state_dict(),
+        'optimizer': config['training']['optimizer'].state_dict(),
         'epoch': epoch_id,
     }, 'artifacts/checkpoint.json')
 
@@ -35,7 +35,7 @@ def load_checkpoint(model: nn.Module, config: dict) -> int:
 
     model.load_state_dict(checkpoint['model'])
     model.to(device)
-    config['optimizer'].load_state_dict(checkpoint['optimizer'])
+    config['training']['optimizer'].load_state_dict(checkpoint['optimizer'])
     return checkpoint['epoch']
 
 
@@ -64,12 +64,12 @@ def loss_batch(
     weight = torch.FloatTensor(weight).to(device)  # [sample_size, ]
     weight = torch.repeat_interleave(
         weight,
-        config['stats']['note']['max'],
+        config['dataset']['stats']['note']['max'],
     )  # [sample_size * n_pitch, ]
     weight = weight.repeat(len(samples))  # [batch_size * samples_size * n_pitch, ]
 
     loss_fn = nn.BCEWithLogitsLoss(
-        pos_weight=torch.ones(len(labels)) * config['pos_weight'],
+        pos_weight=torch.ones(len(labels)) * config['training']['pos_weight'],
         reduction='none',
     ).to(device)
 
@@ -77,7 +77,7 @@ def loss_batch(
     loss = loss_fn(pred, labels)
     metrics['loss'] = (loss * weight).mean()
 
-    pred = torch.sigmoid(pred) >= config['positive_threshold']
+    pred = torch.sigmoid(pred) >= config['training']['positive_threshold']
     labels = labels.bool()
     metrics['acc'] = (pred == labels).float().mean()
     metrics['precision'] = ( pred & labels ).sum() / pred.sum()
@@ -107,18 +107,20 @@ def eval_loader(model: nn.Module, loader: DataLoader, config: dict) -> dict:
 
 
 def train(model: nn.Module, config: dict):
-    train_loader, test_loader = config['train_loader'], config['test_loader']
-    optimizer = config['optimizer']
-    epochs = config['epochs']
+    conf_data = config['dataset']
+    conf_train = config['training']
+    train_loader, test_loader = conf_data['train_loader'], conf_data['test_loader']
+    optimizer = conf_train['optimizer']
+    epochs = conf_train['epochs']
     device = config['device']
 
     converter = FluidSynth(
         sound_font='data/midi.sf2',
-        sample_rate=config['sampling_rate']
+        sample_rate=conf_data['sampling_rate']
     )
 
     model.to(device)
-    for epoch_id in tqdm(range(config['starting_epoch'], epochs+1)):
+    for epoch_id in tqdm(range(conf_train['starting_epoch'], epochs+1)):
         model.train()
         logs = dict()
 
@@ -138,13 +140,13 @@ def train(model: nn.Module, config: dict):
         for name, value in metrics.items():
             logs[f'Test - {name}'] = value
 
-        if epoch_id % config['convert_rate'] == 0:
+        if epoch_id % conf_train['convert_rate'] == 0:
             # Predict the beggining of a random sample.
             # Logs the results into WandB.
             music_idx = torch.randint(len(train_loader.dataset), (1,) )[0]
             samples, labels_real = train_loader.dataset.__getitem__(
                 music_idx,
-                window_size=config['convert_seconds'] * config['sampling_rate'],
+                window_size=conf_train['convert_seconds'] * conf_data['sampling_rate'],
                 n_windows=1,
             )  # Gather the first seconds
             labels_real = merge_instruments(labels_real)
@@ -154,8 +156,8 @@ def train(model: nn.Module, config: dict):
             midi = convert_samples_to_midi(
                 model,
                 samples,
-                config['sampling_rate'],
-                positive_threshold = config['positive_threshold']
+                conf_data['sampling_rate'],
+                positive_threshold = conf_train['positive_threshold']
             )
             midi.write('midi', 'artifacts/out_pred.mid')
             model.to(device)
@@ -163,7 +165,7 @@ def train(model: nn.Module, config: dict):
             labels_real = labels_real.char().cpu().numpy()[0]  # Shape is [n_middle, n_pitches]
             midi = convert_labels_to_midi(
                 labels_real,
-                config['sampling_rate'],
+                conf_data['sampling_rate'],
                 1,
                 1
             )

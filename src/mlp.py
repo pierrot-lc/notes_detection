@@ -71,6 +71,15 @@ class AMTMLP(nn.Module):
         return x.unfold(1, self.window_size, 1)
 
 
+def from_config(config: dict) -> AMTMLP:
+    return AMTMLP(
+        config['dataset']['window_size'] // 2,
+        config['model_params']['hidden_size'],
+        config['model_params']['n_layers'],
+        config['dataset']['stats']['note']['max']
+    )
+
+
 if __name__ == '__main__':
     from torchinfo import summary
     model = AMTMLP(1024, 200, 3, 88)

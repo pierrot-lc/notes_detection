@@ -1,0 +1,19 @@
+group: ResNet - Pitch Prediction
+dataset:
+    piano_only: True
+    window_size: 8192
+    sampling_rate: 11000
+    batch_size: 5
+    n_windows: 5
+training:
+    epochs: 50
+    lr: 5.0e-4
+    pos_weight: 5
+    convert_rate: 10
+    convert_seconds: 2
+    positive_threshold: 0.9
+model_params:
+    kernel_size: 511
+    n_filters: 60
+    n_layers: 10
+    model_type: ResNet

@@ -2,6 +2,7 @@
 """
 import sys
 import wandb
+import yaml
 
 import torch
 import torch.nn as nn
@@ -9,106 +10,37 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from torchinfo import summary
 
+import src.mlp as mlp
+import src.cnn as cnn
+import src.resnet as resnet
 from src.train import train, load_checkpoint
 from src.data import load, get_stats, AMTDataset
-from src.mlp import AMTMLP
-from src.cnn import AMTCNN
-from src.resnet import AMTResNet
 
 
-def init_config(model_type: str) -> dict:
-    config = {
-        # 'group': 'MLP - Pitch Prediction',
-        # 'group': 'Unet - Pitch Prediction',
-        'group': 'ResNet - Pitch Prediction',
-        'piano_only': True,
-
-        'device': 'cuda' if torch.cuda.is_available() else 'cpu',
-        'reload_checkpoint': False,
-
-        'window_size': 8192, # 8192, #2048, #16384, # 4096
-        'sampling_rate': 11000,
-        'convert_rate': 5,
-        'convert_seconds': 2,
-        'positive_threshold': 0.9,
-
-        'epochs': 50,
-        'batch_size': 5,
-        'n_windows': 2,
-        'lr': 1e-3,
-        'pos_weight': 10,
-        'model_type': model_type,
-    }
-
-    return config
-
-
-def config_mlp(config: dict) -> nn.Module:
-    """Config for MLP model.
+def load_datasets(config: dict):
+    """Load the dataset objects.
+    Store everything in the `config['dataset']` dictionnary.
     """
-    config['hidden_size'] = 500
-    config['n_layers'] = 10
-
-    return AMTMLP(
-        config['window_size'] // 2,
-        config['hidden_size'],
-        config['n_layers'],
-        config['stats']['note']['max'],
-    )
-
-
-def config_cnn(config: dict) -> nn.Module:
-    """Config for CNN model.
-    """
-    config['kernel_size'] = 1024
-    config['stride'] = 3
-    config['n_filters'] = 50
-    config['n_layers'] = 3
-
-    return AMTCNN(
-        config['kernel_size'],
-        config['stride'],
-        config['n_filters'],
-        config['n_layers'],
-        config['stats']['note']['max'],
-    )
-
-
-def config_resnet(config: dict) -> nn.Module:
-    """Config for ResNet model.
-    """
-    config['kernel_size'] = 511
-    config['n_filters'] = 40
-    config['n_layers'] = 5
-
-    return AMTResNet(
-        config['kernel_size'],
-        config['n_filters'],
-        config['n_layers'],
-        config['stats']['note']['max'],
-    )
-
-def load_config(config: dict):
     train_dataset = load(
         'data/musicnet/',
         train=True,
-        piano_only=config['piano_only'],
+        piano_only=config['dataset']['piano_only'],
     )
-    config['stats'] = get_stats(train_dataset['labels'])
+    config['dataset']['stats'] = get_stats(train_dataset['labels'])
     train_dataset = AMTDataset(
         train_dataset['id'],
         train_dataset['wav_path'],
         train_dataset['labels'],
-        config['window_size'],
-        config['sampling_rate'],
-        config['stats']['note']['max'],
-        config['stats']['instrument']['max'],
-        config['n_windows'],
+        config['dataset']['window_size'],
+        config['dataset']['sampling_rate'],
+        config['dataset']['stats']['note']['max'],
+        config['dataset']['stats']['instrument']['max'],
+        config['dataset']['n_windows'],
     )
 
-    config['train_loader'] = DataLoader(
+    config['dataset']['train_loader'] = DataLoader(
         train_dataset,
-        batch_size=config['batch_size'],
+        batch_size=config['dataset']['batch_size'],
         shuffle=True,
         num_workers=4,
         collate_fn=AMTDataset.collate_fn,
@@ -117,87 +49,106 @@ def load_config(config: dict):
     test_dataset = load(
         'data/musicnet/',
         train=False,
-        piano_only=config['piano_only']
+        piano_only=config['dataset']['piano_only']
     )
     test_dataset = AMTDataset(
         test_dataset['id'],
         test_dataset['wav_path'],
         test_dataset['labels'],
-        config['window_size'],
-        config['sampling_rate'],
-        config['stats']['note']['max'],
-        config['stats']['instrument']['max'],
-        config['n_windows'],
+        config['dataset']['window_size'],
+        config['dataset']['sampling_rate'],
+        config['dataset']['stats']['note']['max'],
+        config['dataset']['stats']['instrument']['max'],
+        config['dataset']['n_windows'],
     )
 
-    config['test_loader'] = DataLoader(
+    config['dataset']['test_loader'] = DataLoader(
         test_dataset,
-        batch_size=config['batch_size'],
+        batch_size=config['dataset']['batch_size'],
         shuffle=False,
         num_workers=1,
         collate_fn=AMTDataset.collate_fn,
     )
 
+
+def load_config(config_path: str, reload_checkpoint: bool):
+    """Load the yaml config file and prepare all the
+    necessaries objects for the training.
+
+    Everything is stored inside the config dictionnary.
+    """
+    with open(config_path) as config_file:
+        config = yaml.safe_load(config_file)
+
+    config['device'] = 'cuda' if torch.cuda.is_available() else 'cpu'
+    config['training']['reload_checkpoint'] = reload_checkpoint
+
+    load_datasets(config)
     model_map = {
-        'MLP': config_mlp,
-        'CNN': config_cnn,
-        'resnet': config_resnet,
+        'MLP': mlp.from_config,
+        'Unet': cnn.from_config,
+        'ResNet': resnet.from_config,
     }
-    model = model_map[config['model_type']](config)
+    model = model_map[config['model_params']['model_type']](config)
     config['model'] = model
 
-    config['optimizer'] = optim.Adam(
+    config['training']['optimizer'] = optim.Adam(
         model.parameters(),
-        lr=config['lr']
+        lr=config['training']['lr']
     )
 
-    config['starting_epoch'] = 1
-    if config['reload_checkpoint']:
-        config['starting_epoch'] = load_checkpoint(config['model'], config)
+    config['training']['starting_epoch'] = 1
+    if config['training']['reload_checkpoint']:
+        config['training']['starting_epoch'] = load_checkpoint(config['model'], config)
+
+    return config
 
 
 def print_infos(config: dict):
     """Show the config file informations.
     Also print the model summary.
     """
+
+    def print_dict(my_dict: dict, front_space: int, ignore: set):
+        for param, value in my_dict.items():
+            if param in ignore:
+                continue
+
+            param_exp = f'{" " * front_space}{param}'
+            if type(value) is dict:
+                print(f'{param_exp}:')
+                print_dict(value, front_space + 4, ignore)
+            else:
+                print(f'{param_exp:<30}-\t\t{value}')
+
+
     ignore = {'model', 'optimizer', 'train_loader', 'test_loader'}
-    tabsize = 30
 
-    print(f'{2 * tabsize * "-"} Notes Predictions {2 * tabsize * "-"}\n\n')
-
-    for param, value in config.items():
-        if param in ignore:
-            continue
-
-        param_exp = f'[{param}]\t'.expandtabs(tabsize)
-        print(f'     {param_exp}-\t\t{value}')
-
-
-    print(f'\n\n{2 * tabsize * "-"} {config["model_type"]} {2 * tabsize * "-"}\n')
+    print(f'{60 * "-"} Notes Predictions {60 * "-"}\n\n')
+    print_dict(config, 0, ignore)
+    print(f'\n\n{60 * "-"} {config["model_params"]["model_type"]} {60 * "-"}\n')
 
     summary(
         config['model'],
         input_size=(
-            config['batch_size'] * config['n_windows'],
-            config['train_loader'].dataset.window_size,
+            config['dataset']['batch_size'] * config['dataset']['n_windows'],
+            config['dataset']['train_loader'].dataset.window_size,
         ),
         depth=2,
     )
 
-    print(f'\nTrain songs: {len(config["train_loader"].dataset):,}')
-    print(f'Test songs: {len(config["test_loader"].dataset):,}')
+    print(f'\nTrain songs: {len(config["dataset"]["train_loader"].dataset):,}')
+    print(f'Test songs: {len(config["dataset"]["test_loader"].dataset):,}')
 
 
 if __name__ == '__main__':
-    available_types = ['MLP', 'CNN', 'resnet']
     if len(sys.argv) != 2:
-        print(f'Usage: {sys.argv[0]} [model_type]')
-        print('Available model types:', *available_types)
+        print(f'Usage: {sys.argv[0]} [config_file]')
         sys.exit(0)
 
-    model_type = sys.argv[1]
-    config = init_config(model_type)
-    load_config(config)
+    config_path = sys.argv[1]
+    reload_checkpoint = False
+    config = load_config(config_path, reload_checkpoint)
     print_infos(config)
 
     continue_training = input('\n\nContinue? [y/n] ')

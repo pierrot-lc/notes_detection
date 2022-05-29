@@ -23,7 +23,6 @@ class AMTResNet(nn.Module):
             nn.BatchNorm1d(n_filters),
         )
 
-
         # Main convolutional layers
         self.convs = nn.ModuleList([
             nn.Sequential(
@@ -68,46 +67,13 @@ class AMTResNet(nn.Module):
         return self.head(x)
 
 
-    def pad_input(self, x: torch.FloatTensor, layer_id: int) -> tuple[torch.FloatTensor, int]:
-        """Add zero-padding to `x` so that the output of the convolution is a perfect integer.
-
-        Input
-        -----
-            x: Batch of samples.
-                Shape of [batch_size, n_filters, input_size].
-            layer_id: Id of the convolution layer, used to fetch the hyperparameters.
-
-        Output
-        ------
-            x: Batch of padded samples.
-                Shape of [batch_size, n_filters, input_size + padding].
-            padding: Number of padding added to `x`.
-        """
-        padding_total = (x.shape[-1] - self.hparams['kernel_size'][layer_id]) % self.hparams['stride'][layer_id]
-        padding_total = self.hparams['stride'][layer_id] - padding_total if padding_total != 0 else 0
-
-        padd_b = torch.zeros((x.shape[0], x.shape[1], padding_total // 2 + padding_total % 2)).to(x.device)
-        padd_e = torch.zeros((x.shape[0], x.shape[1], padding_total // 2)).to(x.device)
-        x = torch.cat((padd_b, x, padd_e), dim=-1)
-        return x, padding_total
-
-    def unpad_input(self, x: torch.FloatTensor, padding_total: int) -> torch.FloatTensor:
-        """Remove the extra padding to `x`.
-
-        Input
-        -----
-            x: Batch of padded samples.
-                Shape of [batch_size, n_filters, input_size].
-            padding_total: Number of padding to remove.
-
-        Output
-        ------
-            x: Batch of unpadded samples.
-                Shape of [batch_size, n_filters, input_size - padding_total].
-        """
-        padd_b = padding_total // 2 + padding_total % 2
-        padd_e = padding_total // 2
-        return x[:, :, padd_b : x.shape[-1]-padd_e]
+def from_config(config: dict) -> AMTResNet:
+    return AMTResNet(
+        config['model_params']['kernel_size'],
+        config['model_params']['n_filters'],
+        config['model_params']['n_layers'],
+        config['dataset']['stats']['note']['max']
+    )
 
 
 if __name__ == '__main__':

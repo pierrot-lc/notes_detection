@@ -1,0 +1,18 @@
+group: MLP - Pitch Prediction
+dataset:
+    piano_only: True
+    window_size: 2048
+    sampling_rate: 11000
+    batch_size: 5
+    n_windows: 2
+training:
+    epochs: 50
+    lr: 1.0e-3
+    pos_weight: 10
+    convert_rate: 10
+    convert_seconds: 2
+    positive_threshold: 0.9
+model_params:
+    hidden_size: 500
+    n_layers: 10
+    model_type: MLP
