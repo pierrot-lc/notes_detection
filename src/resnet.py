@@ -19,17 +19,41 @@ class AMTResNet(nn.Module):
 
         # Small sliding window that project the 1D features to n_filters
         self.project = nn.Sequential(
-            nn.Conv1d(1, n_filters, 3, 1, padding='same'),
-            nn.BatchNorm1d(n_filters),
+            nn.Conv1d(1, n_filters // 4, 3, 1, padding='same', bias=False),
+            nn.BatchNorm1d(n_filters // 4),
         )
 
-        # Main convolutional layers
-        self.convs = nn.ModuleList([
+        # Global attending convs
+        # High kernel size and low number of filters
+        self.global_convs = nn.ModuleList([
+            nn.Sequential(
+                nn.Conv1d(
+                    n_filters // 4,
+                    n_filters // 4,
+                    kernel_size=kernel_size,
+                    stride=1,
+                    padding='same',
+                    bias=False,
+                ),
+                nn.BatchNorm1d(n_filters // 4),
+                nn.LeakyReLU(),
+            )
+            for _ in range(n_layers)
+        ])
+
+        self.glob_to_loc = nn.Sequential(
+                nn.Conv1d(n_filters // 4, n_filters, 3, 1, padding='same', bias=False),
+                nn.BatchNorm1d(n_filters),
+            )
+
+        # Local attending convs
+        # Low kernel size and high number of filters
+        self.local_convs = nn.ModuleList([
             nn.Sequential(
                 nn.Conv1d(
                     n_filters,
                     n_filters,
-                    kernel_size=kernel_size,
+                    kernel_size=kernel_size // 4,
                     stride=1,
                     padding='same',
                     bias=False,
@@ -61,7 +85,12 @@ class AMTResNet(nn.Module):
         x = x.unsqueeze(1)  # [batch_size, 1, input_size]
         x = self.project(x)
 
-        for conv_layer in self.convs:
+        for conv_layer in self.global_convs:
+            x = conv_layer(x) + x
+
+        x = self.glob_to_loc(x)
+
+        for conv_layer in self.local_convs:
             x = conv_layer(x) + x
 
         return self.head(x)
