@@ -33,3 +33,6 @@ def test_from_timesteps(filepath: str, timesteps: list[int]):
                 true_label[instrument_id - 1, note_id - 1] = 1
 
         assert (true_label == label).all()
+
+
+## TODO: test dataset => resampling parameter ...

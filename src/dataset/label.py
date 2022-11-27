@@ -9,8 +9,8 @@ class SongLabels:
     for each timsteps given. This method end in `O(n)`, where `n` is the number of
     events (keys pressed/released) in the song.
 
-    Parameters
     ----------
+    Parameters
         labels: DataFrame containing the `start_time`, `end_time`, `note`
             and `instrument` information.
         n_pitches: Number of pitches.
@@ -40,13 +40,13 @@ class SongLabels:
         """Return the labels for each points given in that song.
         This is done in `O(n)` time, where `n` is `len(self)`.
 
-        Args
         ----
+        Args
             timesteps: Array of timesteps. *They should be sorted!*
                 Shape of [n_points,].
 
-        Returns
         -------
+        Returns
             labels: One-hot vectors for each timesteps.
                 Shape of [n_points, n_instruments, n_pitches].
         """
@@ -102,8 +102,8 @@ class SongLabels:
         If some events occurs at the same time, they will be gathered into one
         iteration.
 
-        Returns
         -------
+        Returns
             label: One-hot vector for the current time step.
                 Shape of [n_instruments, n_pitches].
             time: Time step corresponding to this label.
