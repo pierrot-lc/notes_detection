@@ -63,7 +63,7 @@ class SongLabels:
             # We go through all events and fill the labels until
             # all are processed or events are terminated.
             while point_id < len(timesteps):
-                if curr_time >= timesteps[point_id]:
+                if curr_time > timesteps[point_id]:
                     labels[point_id] = previous_labels
                     point_id += 1
                 else:
