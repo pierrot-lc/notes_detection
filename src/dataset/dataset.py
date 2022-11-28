@@ -9,8 +9,6 @@ from torch.utils.data import Dataset
 
 from .label import SongLabels
 
-DEFAULT_SAMPLE_RATE = 44100
-
 
 class AMTDataset(Dataset):
     """Divide all musics into samples of fixed length (window size).
@@ -24,12 +22,10 @@ class AMTDataset(Dataset):
         wav_paths:      List of music paths.
         labels:         List of labels.
         window_size:    Number of samples necessary to predict the middle labels.
-        sampling_rate:  Targeted sampling rate. Each wav will be converted to
-                        this sampling rate.
-        n_pitches:      Number of possible pitches for the labels' dimension.
-        n_instruments:  Number of possible instruments for the labels' dimension.
         n_windows:      Number of random starting points. When sampling from
                         this dataset, it will return one window for each starting point.
+        sampling_rate:  Targeted sampling rate. Each wav will be converted to
+                        this sampling rate.
     """
 
     def __init__(
@@ -38,10 +34,12 @@ class AMTDataset(Dataset):
         labels: list[pd.DataFrame],
         window_size: int,
         n_windows: int,
+        sampling_rate: int,
     ):
         self.wav_paths = wav_paths
         self.window_size = window_size
         self.n_windows = n_windows
+        self.target_sr = sampling_rate
 
         max_notes = max(df["note"].max() for df in labels)
         max_instru = max(df["instrument"].max() for df in labels)
@@ -51,31 +49,58 @@ class AMTDataset(Dataset):
         return len(self.wav_paths)
 
     def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
+        """Load the song frames and fetch the labels.
+        Random windows are sampled from the song frames.
+
+        ----
+        Args
+            index: Index of the song in the dataset.
+
+        -------
+        Returns
+            waves: Batch of `n_windows` of frames.
+                Shape of [n_windows, n_channels, window_size].
+            labels: Corresponding labels for each frame.
+                Shape of [n_windows, window_size, n_instruments, n_notes].
+        """
         wav_path = self.wav_paths[index]
         infos = torchaudio.info(wav_path)
         num_frames, sample_rate = infos.num_frames, infos.sample_rate
+        rescaled_window_size = (
+            self.window_size * sample_rate // self.target_sr
+        )  # Account for the resampling.
 
         begin_frames = torch.randint(
             low=0,
-            high=num_frames - self.window_size,
+            high=num_frames - rescaled_window_size,
             size=(self.n_windows,),
         ).numpy()
 
         waves = [
-            torchaudio.load(wav_path, frame_offset=begin, num_frames=self.window_size)
+            torchaudio.load(
+                wav_path,
+                frame_offset=begin,
+                num_frames=rescaled_window_size,
+            )
             for begin in begin_frames
         ]  # Load only the frames needed.
         waves = [w[0] for w in waves]  # Get the waves.
         waves = torch.stack(waves)  # To full tensor.
 
-        window_timestep = np.arange(self.window_size)
+        window_timestep = np.arange(rescaled_window_size)
         labels = [
             self.labels[index].from_timesteps(window_timestep + begin)
             for begin in begin_frames
         ]
         labels = torch.stack([torch.CharTensor(label) for label in labels])
 
-        # waves = TF.resample(waves, sample_rate, DEFAULT_SAMPLE_RATE)
+        waves = TF.resample(waves, sample_rate, self.target_sr)
+        labels = labels.permute(
+            0, 2, 3, 1
+        ).contiguous()  # Put timesteps in the last dimension.
+        labels = TF.resample(labels.float(), sample_rate, self.target_sr)
+        labels = labels.char()
+        labels = labels.permute(0, 3, 1, 2)  # Put timesteps back to the 2nd dimension.
 
         return waves, labels
 

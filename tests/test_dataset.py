@@ -37,8 +37,11 @@ def test_from_timesteps(filepath: str, timesteps: list[int]):
         assert (true_label == label).all()
 
 
-@pytest.mark.parametrize("window_size, n_windows", [(128, 5), (128, 1), (1, 5)])
-def test_dataset(window_size: int, n_windows: int):
+@pytest.mark.parametrize(
+    "window_size, n_windows, sample_rate",
+    [(128, 5, 22050), (128, 1, 8820), (1, 5, 17640)],
+)
+def test_dataset(window_size: int, n_windows: int, sample_rate: int):
     wav_paths = [
         "./data/musicnet/test_data/1759.wav",
         "./data/musicnet/test_data/1819.wav",
@@ -54,7 +57,7 @@ def test_dataset(window_size: int, n_windows: int):
     labels = [pd.read_csv(lp) for lp in labels]
     max_notes = max(df["note"].max() for df in labels)
     max_instru = max(df["instrument"].max() for df in labels)
-    dataset = AMTDataset(wav_paths, labels, window_size, n_windows)
+    dataset = AMTDataset(wav_paths, labels, window_size, n_windows, sample_rate)
     for waves, labels in dataset:
         assert len(waves.shape) == 3
         assert waves.shape == torch.Size([n_windows, 1, window_size])
