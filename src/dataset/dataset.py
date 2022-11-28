@@ -53,7 +53,7 @@ class AMTDataset(Dataset):
     def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
         wav_path = self.wav_paths[index]
         infos = torchaudio.info(wav_path)
-        num_frames, sample_rate = infos.num_frames, info.sample_rate
+        num_frames, sample_rate = infos.num_frames, infos.sample_rate
 
         begin_frames = torch.randint(
             low=0,
@@ -75,8 +75,7 @@ class AMTDataset(Dataset):
         ]
         labels = torch.stack([torch.CharTensor(label) for label in labels])
 
-        waves = TF.resample(waves, sample_rate, DEFAULT_SAMPLE_RATE)
-        labels = TF.resample(labels, sample_rate, DEFAULT_SAMPLE_RATE).char()
+        # waves = TF.resample(waves, sample_rate, DEFAULT_SAMPLE_RATE)
 
         return waves, labels
 
@@ -154,3 +153,4 @@ def merge_instruments(labels: torch.Tensor) -> torch.Tensor:
 
 
 def load_dataloader():
+    pass

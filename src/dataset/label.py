@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import torch
 
 
 class SongLabels:
@@ -124,3 +125,13 @@ class SongLabels:
             self.curr_index += 1
 
         return self.curr_labels.copy(), time
+
+
+def resample(labels: torch.Tensor, n_points: int) -> torch.Tensor:
+    """
+
+    ----
+    Args
+        labels: Batch of labels of shape [batch_size, n_origin_points, ]
+    """
+    pass
