@@ -19,6 +19,10 @@ from src.dataset.label import SongLabels
             "./data/musicnet/train_labels/1727.csv",
             [0, 9182, 62430],
         ),  # Test on exact start_time and end_time.
+        (
+            "./data/musicnet/train_labels/1727.csv",
+            [i for i in range(1000)],
+        ),  # Test on exact start_time and end_time.
     ],
 )
 def test_from_timesteps(filepath: str, timesteps: list[int]):

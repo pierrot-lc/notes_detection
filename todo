@@ -1,2 +1,5 @@
-Make sure the loaded labels are the same as the midi file.
-Convert midi labels to midi file.
+Make sure the loaded labels are the same as the midi file. OK
+Convert midi labels to midi file:
+ * Go from frames to tuples (pitch, start_time, end_time) -> Compare with the given labels!
+ * Go from tuples to midi events.
+ * Save midi events to a single midi file.

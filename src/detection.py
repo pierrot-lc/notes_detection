@@ -1,19 +1,17 @@
 """Use a trained model to do the AMT task.
 """
 import numpy as np
-from music21.stream import Stream, Score
-from music21.note import Note, Rest
-
 import torch
 import torch.nn as nn
+from music21.note import Note, Rest
+from music21.stream import Score, Stream
 
 
 def predict_labels(
-        model: nn.Module,
-        x: torch.FloatTensor,
-        positive_threshold: float,
-
-    ) -> np.ndarray:
+    model: nn.Module,
+    x: torch.FloatTensor,
+    positive_threshold: float,
+) -> np.ndarray:
     """Use the trained model to predict the notes played in each window.
 
     Input
@@ -36,7 +34,7 @@ def predict_labels(
 
 
 def fill_blanks(labels: np.ndarray, delta: int) -> np.ndarray:
-    """Add missing pitchs when a serie of the same pitch is predicted,
+    """Add missing pitchs when series of the same pitch is predicted,
     with some noisy small blanks between them.
     The parameter delta is setting how much long a blank can be.
 
@@ -64,7 +62,9 @@ def fill_blanks(labels: np.ndarray, delta: int) -> np.ndarray:
         labels[sample_id] = curr_sum
 
     labels = np.flip(labels, axis=0)  # Take the samples in reverse order
-    between_notes = np.zeros(labels.shape[1], dtype=int)  # Wether we are between pressed pitches or not
+    between_notes = np.zeros(
+        labels.shape[1], dtype=int
+    )  # Whether we are between pressed pitches or not
     for sample_id, sample in enumerate(labels):
         between_notes[sample == 0] = 1
         between_notes[sample > delta] = 0
@@ -75,11 +75,7 @@ def fill_blanks(labels: np.ndarray, delta: int) -> np.ndarray:
     return labels
 
 
-def postprocess(
-        labels: np.ndarray,
-        max_zeros: int,
-        max_ones: int
-    ) -> np.ndarray:
+def postprocess(labels: np.ndarray, max_zeros: int, max_ones: int) -> np.ndarray:
     """Fill low consecutives 0's by 1's, and remove low consecutives 1's by 0's.
     Low consecutives 0's are considered as false negative and low consecutives 1's
     are considered as false positive.
@@ -130,7 +126,7 @@ def streamify(labels: np.ndarray) -> list:
 
         durations += 1
         durations[sample != onsets] = 1
-        onsets = sample.astype('bool')
+        onsets = sample.astype("bool")
 
     # Add the pending notes
     for pitch_id in range(labels.shape[1]):
@@ -155,14 +151,14 @@ def to_midi(stream: list, sampling_rate: int) -> Stream:
         midi: Stream of multiple substreams, where each substream
             is following one different pitch history.
     """
-    midi = Score(id='mainScore')
+    midi = Score(id="mainScore")
 
     for pitch_id, pitch_history in enumerate(stream):
         pitch_midi = Stream()
         for onset, duration in pitch_history:
             duration = 2 * duration / sampling_rate
             if onset:
-                note = Note(pitch_id+1, quarterLength=duration)
+                note = Note(pitch_id + 1, quarterLength=duration)
             else:
                 note = Rest(quarterLength=duration)
 
@@ -174,11 +170,11 @@ def to_midi(stream: list, sampling_rate: int) -> Stream:
 
 
 def convert_labels_to_midi(
-        labels: np.ndarray,
-        sampling_rate: int,
-        max_zeros: int = 100,
-        max_ones: int = 100,
-    ):
+    labels: np.ndarray,
+    sampling_rate: int,
+    max_zeros: int = 100,
+    max_ones: int = 100,
+):
     """Pipeline predicting the labels detected by the model,
     and converting those labels into one midi object.
 
@@ -203,13 +199,13 @@ def convert_labels_to_midi(
 
 
 def convert_samples_to_midi(
-        model: nn.Module,
-        samples: torch.FloatTensor,
-        sampling_rate: int,
-        max_zeros: int = 1,
-        max_ones: int = 1,
-        positive_threshold: float = 0.5,
-    ) -> Stream:
+    model: nn.Module,
+    samples: torch.FloatTensor,
+    sampling_rate: int,
+    max_zeros: int = 1,
+    max_ones: int = 1,
+    positive_threshold: float = 0.5,
+) -> Stream:
     """Pipeline predicting the labels detected by the model,
     and converting those labels into one midi object.
 
@@ -237,55 +233,59 @@ def convert_samples_to_midi(
     return midi
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+    from data import AMTDataset, get_stats, load, merge_instruments
     from mlp import AMTMLP
-    from data import load, get_stats, AMTDataset, merge_instruments
 
-    data = load('../data/musicnet/', train=False)
+    data = load("../data/musicnet/", train=False)
     sampling_rate = 11000
-    stats = get_stats(data['labels'])
+    stats = get_stats(data["labels"])
     dataset = AMTDataset(
-        data['id'],
-        data['wav_path'],
-        data['labels'],
+        data["id"],
+        data["wav_path"],
+        data["labels"],
         2048,
         sampling_rate,
-        stats['note']['max'],
-        stats['instrument']['max'],
+        stats["note"]["max"],
+        stats["instrument"]["max"],
         10,
     )
     samples, labels = dataset.__getitem__(0, n_windows=1, window_size=100)
 
-    model = AMTMLP(2048, 200, 3, stats['note']['max'])
+    model = AMTMLP(2048, 200, 3, stats["note"]["max"])
 
     labels = predict_labels(model, samples, 0.7)
-    labels = np.array([
-        [1, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0],
-        [1, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1],
-    ]).transpose(1, 0)
+    labels = np.array(
+        [
+            [1, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0],
+            [1, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1],
+        ]
+    ).transpose(1, 0)
     filled = postprocess(labels, max_zeros=1, max_ones=2)
 
-    print('For max_zeros = 1 and max_ones = 2')
+    print("For max_zeros = 1 and max_ones = 2")
     for original, final in zip(
         labels.transpose(1, 0),
         filled.transpose(1, 0),
     ):
-        print('Original:\t', original)
-        print('Final:\t\t', final)
-        print('')
+        print("Original:\t", original)
+        print("Final:\t\t", final)
+        print("")
 
     stream = streamify(filled)
     midi = to_midi(stream, 1)
-    midi.show('text')
+    midi.show("text")
 
     # Get the first 10 secs
     idx = 0
     midi_id = dataset.ids[idx]
-    samples, labels = dataset.__getitem__(idx, n_windows=1, window_size=15 * sampling_rate)
+    samples, labels = dataset.__getitem__(
+        idx, n_windows=1, window_size=15 * sampling_rate
+    )
     samples, labels = samples[0], labels[0]
 
     notes = merge_instruments(labels)
     notes = notes.char().cpu().numpy()
 
     midi = convert_labels_to_midi(notes, sampling_rate, 1, 1)
-    midi.write('midi', f'{midi_id}.mid')
+    midi.write("midi", f"{midi_id}.mid")
