@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import torch
+import torchaudio
 
 from src.dataset.dataset import AMTDataset
 from src.dataset.label import SongLabels
@@ -10,7 +11,7 @@ from src.dataset.label import SongLabels
 @pytest.mark.parametrize(
     "filepath, timesteps",
     [
-        ("./data/musicnet/train_labels/1727.csv", [0, 1000, 10000]),  # Base case.
+        ("./data/musicnet/train_labels/1727.csv", [0, 1000, 10000]),  # Basic case.
         (
             "./data/musicnet/train_labels/1727.csv",
             [0, 272727, 1000000000, 1000000001, 1000000002],
@@ -21,8 +22,8 @@ from src.dataset.label import SongLabels
         ),  # Test on exact start_time and end_time.
         (
             "./data/musicnet/train_labels/1727.csv",
-            [i for i in range(1000)],
-        ),  # Test on exact start_time and end_time.
+            [i for i in range(10000, 10300)],
+        ),  # Test on consecutive frames.
     ],
 )
 def test_from_timesteps(filepath: str, timesteps: list[int]):
@@ -45,7 +46,7 @@ def test_from_timesteps(filepath: str, timesteps: list[int]):
     "window_size, n_windows, sample_rate",
     [(128, 5, 22050), (128, 1, 8820), (1, 5, 17640)],
 )
-def test_dataset(window_size: int, n_windows: int, sample_rate: int):
+def test_dataset_shapes(window_size: int, n_windows: int, sample_rate: int):
     wav_paths = [
         "./data/musicnet/test_data/1759.wav",
         "./data/musicnet/test_data/1819.wav",
@@ -69,3 +70,26 @@ def test_dataset(window_size: int, n_windows: int, sample_rate: int):
         assert labels.shape == torch.Size(
             [n_windows, window_size, max_instru, max_notes]
         )
+
+
+@pytest.mark.parametrize(
+    "labels_path, wav_path, sampling_rate",
+    [
+        (
+            "./data/musicnet/test_labels/1759.csv",
+            "./data/musicnet/test_data/1759.wav",
+            22050,
+        )
+    ],
+)
+def test_labels_downsampling(labels_path: str, wav_path: str, sampling_rate: int):
+    df = pd.read_csv(labels_path)
+    dataset = AMTDataset([wav_path], [df], 100, 5, sampling_rate)
+    original_sr = torchaudio.info(wav_path).sample_rate
+
+    head_df = df.head(5)
+    for start_time, end_time, instrument, note in head_df[
+        ["start_time", "end_time", "instrument", "note"]
+    ]:
+        rescaled_start_time = start_time * sampling_rate // original_sr
+        rescaled_end_time = end_time * sampling_rate // original_sr

@@ -45,7 +45,84 @@ class AMTDataset(Dataset):
         max_instru = max(df["instrument"].max() for df in labels)
         self.labels = [SongLabels(df, max_notes, max_instru) for df in labels]
 
+    def get_windows(
+        self, index: int, begin_frames: np.ndarray, windows_size: int
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Load the windows of frames and labels for the given song and the given windows.
+
+        ----
+        Args
+            index: Id of the given song & label.
+            begin_frames: Frame ids of the beginning of each window.
+                Shape of [n_windows,].
+            windows_size: Number of frames for each window.
+
+        -------
+        Returns
+            waves: Batch of `n_windows` of frames.
+                Shape of [n_windows, n_channels, window_size].
+            labels: Corresponding labels for each frame.
+                Shape of [n_windows, window_size, n_instruments, n_notes].
+        """
+        # Load waves.
+        wav_path = self.wav_paths[index]
+        waves = [
+            torchaudio.load(
+                wav_path,
+                frame_offset=begin,
+                num_frames=windows_size,
+            )
+            for begin in begin_frames
+        ]  # Load only the frames needed.
+        waves = [w[0] for w in waves]  # Get the waves.
+        waves = torch.stack(waves)  # To full tensor.
+
+        # Load labels.
+        window_timestep = np.arange(windows_size)
+        labels = [
+            self.labels[index].from_timesteps(window_timestep + begin)
+            for begin in begin_frames
+        ]
+        labels = torch.stack([torch.CharTensor(label) for label in labels])
+
+        return waves, labels
+
+    def downsample(
+        self,
+        waves: torch.Tensor,
+        labels: torch.Tensor,
+        sample_rate: int,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Downsample the given waves and labels to the `self.target_sr` sampling rate.
+        The new number of samples is `downsample_size = window_size * sample_rate // self.target_sr`.
+
+        ----
+        Args
+            waves: Batch of `n_windows` of frames.
+                Shape of [n_windows, n_channels, window_size].
+            labels: Corresponding labels for each frame.
+                Shape of [n_windows, window_size, n_instruments, n_notes].
+            sample_rate: Original sample rate of the song.
+
+        -------
+        Returns
+            waves: Batch of `n_windows` of frames.
+                Shape of [n_windows, n_channels, downsample_size].
+            labels: Corresponding labels for each frame.
+                Shape of [n_windows, downsample_size, n_instruments, n_notes].
+
+        """
+        waves = TF.resample(waves, sample_rate, self.target_sr)
+        labels = labels.permute(
+            0, 2, 3, 1
+        ).contiguous()  # Put timesteps in the last dimension.
+        labels = TF.resample(labels.float(), sample_rate, self.target_sr)
+        labels = labels.char()
+        labels = labels.permute(0, 3, 1, 2)  # Put timesteps back to the 2nd dimension.
+        return waves, labels
+
     def __len__(self):
+        """Number of songs."""
         return len(self.wav_paths)
 
     def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
@@ -76,32 +153,8 @@ class AMTDataset(Dataset):
             size=(self.n_windows,),
         ).numpy()
 
-        waves = [
-            torchaudio.load(
-                wav_path,
-                frame_offset=begin,
-                num_frames=rescaled_window_size,
-            )
-            for begin in begin_frames
-        ]  # Load only the frames needed.
-        waves = [w[0] for w in waves]  # Get the waves.
-        waves = torch.stack(waves)  # To full tensor.
-
-        window_timestep = np.arange(rescaled_window_size)
-        labels = [
-            self.labels[index].from_timesteps(window_timestep + begin)
-            for begin in begin_frames
-        ]
-        labels = torch.stack([torch.CharTensor(label) for label in labels])
-
-        waves = TF.resample(waves, sample_rate, self.target_sr)
-        labels = labels.permute(
-            0, 2, 3, 1
-        ).contiguous()  # Put timesteps in the last dimension.
-        labels = TF.resample(labels.float(), sample_rate, self.target_sr)
-        labels = labels.char()
-        labels = labels.permute(0, 3, 1, 2)  # Put timesteps back to the 2nd dimension.
-
+        waves, labels = self.get_windows(index, begin_frames, rescaled_window_size)
+        waves, labels = self.downsample(waves, labels, sample_rate)
         return waves, labels
 
 
