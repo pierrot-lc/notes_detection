@@ -6,6 +6,7 @@ import torchaudio
 
 from src.dataset.dataset import AMTDataset
 from src.dataset.label import SongLabels
+from src.midi.parser import frames_to_timesteps
 
 
 @pytest.mark.parametrize(
@@ -90,6 +91,33 @@ def test_labels_downsampling(labels_path: str, wav_path: str, sampling_rate: int
     head_df = df.head(5)
     for start_time, end_time, instrument, note in head_df[
         ["start_time", "end_time", "instrument", "note"]
-    ]:
-        rescaled_start_time = start_time * sampling_rate // original_sr
-        rescaled_end_time = end_time * sampling_rate // original_sr
+    ].values:
+        # Read labels according to the event start and end time.
+        waves, labels = dataset.get_windows(
+            0, np.array([start_time]), end_time - start_time
+        )
+        _, labels = dataset.downsample(waves, labels, original_sr)
+
+        # Extract event.
+        labels = labels[
+            0, :, instrument - 1
+        ].numpy()  # Shape is [n_downsampled_points, n_notes].
+        labels[:, : note - 1] = 0
+        labels[:, note:] = 0
+        timesteps = frames_to_timesteps(labels, sampling_rate)
+
+        assert len(timesteps) == 1
+        event = timesteps[0]
+
+        # Round the number to account for numerical approximation.
+        start_time = start_time / original_sr
+        end_time = end_time / original_sr
+        event = (
+            event[0],
+            round(start_time + event[1], 2),
+            round(start_time + event[2], 2),
+        )
+        start_time = round(start_time, 2)
+        end_time = round(end_time, 2)
+
+        assert event == (note - 1, start_time, end_time)

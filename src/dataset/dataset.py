@@ -48,7 +48,8 @@ class AMTDataset(Dataset):
     def get_windows(
         self, index: int, begin_frames: np.ndarray, windows_size: int
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Load the windows of frames and labels for the given song and the given windows.
+        """Load the windows of frames and labels for the given song
+        and the given windows.
 
         ----
         Args
@@ -117,6 +118,7 @@ class AMTDataset(Dataset):
             0, 2, 3, 1
         ).contiguous()  # Put timesteps in the last dimension.
         labels = TF.resample(labels.float(), sample_rate, self.target_sr)
+        labels[labels > 0.5] = 1  # Labels can be lowered due to downsampling
         labels = labels.char()
         labels = labels.permute(0, 3, 1, 2)  # Put timesteps back to the 2nd dimension.
         return waves, labels
